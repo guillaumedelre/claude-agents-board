@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { ArrowLeft, Bot, Check, Pencil, X, CheckCircle2, Copy, FolderGit2, Monitor, ScrollText } from "lucide-react"
 import { Gantt } from "@/components/gantt"
+import { Office } from "@/components/office"
 import { AgentTree } from "@/components/session-list"
 import { StatusBadge } from "@/components/status"
 import { Bubble, Timeline } from "@/components/timeline"
@@ -17,11 +18,12 @@ import { buildTree } from "@/lib/tree"
 import type { SessionDetail } from "@/lib/types"
 
 const VIEW_KEY = "agents.detailView"
-type View = "journal" | "timeline"
+type View = "journal" | "timeline" | "office"
 
 function readView(): View {
   try {
-    return localStorage.getItem(VIEW_KEY) === "timeline" ? "timeline" : "journal"
+    const v = localStorage.getItem(VIEW_KEY)
+    return v === "timeline" || v === "office" ? v : "journal"
   } catch {
     return "journal"
   }
@@ -141,12 +143,17 @@ export function Detail({ session: s, agentId, now }: { session: SessionDetail; a
           <TabsList>
             <TabsTrigger value="journal">Journal</TabsTrigger>
             <TabsTrigger value="timeline">Timeline</TabsTrigger>
+            <TabsTrigger value="office">Bureau</TabsTrigger>
           </TabsList>
         </Tabs>
       </header>
 
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
-        {view === "timeline" ? (
+        {view === "office" ? (
+          <div className="px-4 py-4 md:px-6">
+            <Office session={s} agentId={agentId} now={now} />
+          </div>
+        ) : view === "timeline" ? (
           <div className="px-4 py-4 md:px-6">
             <Gantt session={s} agentId={agentId} />
           </div>

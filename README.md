@@ -31,7 +31,7 @@ Noms affichés :
 
 Les hooks ne transmettent pas les messages intermédiaires du modèle, seulement le dernier message de chaque tour (`Stop`, `SubagentStop`).
 
-Le détail d'une session ou d'un agent a deux vues : « Journal » (la chronologie ci-dessus) et « Timeline ». Le bouton ✕ ou la touche Échap ferment le détail ; retirer une session du tableau passe par le menu « Nettoyage ».
+Le détail d'une session ou d'un agent a trois vues : « Journal » (la chronologie ci-dessus), « Timeline » et « Bureau ». Le bouton ✕ ou la touche Échap ferment le détail ; retirer une session du tableau passe par le menu « Nettoyage ».
 
 La barre du haut ne garde que le titre (retour à l'accueil) et le nombre de sessions en attente de toi. La barre de statut en bas affiche :
 
@@ -59,6 +59,19 @@ Vue de type Gantt, rafraîchie chaque seconde, sur 5 minutes, 30 minutes, 2 heur
 - sous chaque barre, les appels d'outils (rouges en cas d'échec).
 
 Pour un agent ou une tâche en cours, la fin estimée apparaît en pointillés, et le dépassement en orange. L'estimation est la durée médiane des agents du même type (ou des tâches) déjà terminés : sur le même projet s'il y en a au moins 3, sinon sur tous les projets, sinon aucune estimation. Elle est calculée par l'application, sans rien demander à Claude Code.
+
+### Bureau
+
+Une vue en pixel art de la session : l'agent principal derrière le comptoir d'accueil (veste orange), chaque sous-agent en cours à sa propre table.
+
+- Un sous-agent reçoit une table à son démarrage (la première libre) et la libère en partant ; une rangée de trois tables s'ajoute quand toutes sont prises.
+- Un type d'agent a toujours la même apparence (couleur de peau, tenue, coiffure tirées de son type).
+- Animation selon le dernier outil : lecture (`Read`, `Grep`, `Glob`, `WebFetch`, `WebSearch`, `ToolSearch`) avec un balancement lent et un voyant vert sous l'écran, frappe pour tous les autres outils avec un voyant bleu, immobile au repos.
+- Bulles : « … » ambre quand la session attend une permission, coche verte pendant 2,5 secondes en fin de tour ou à la fin d'un sous-agent, « ! » rouge pour un sous-agent interrompu ou une session en erreur, « z » pour une session ou un agent sans nouvelles depuis 10 minutes.
+- Au-dessus de chaque personnage : son nom (« Agent principal », « #3 Explore ») et l'outil en cours. Le survol affiche la tâche, l'état, l'outil et la durée ; un clic ouvre le détail de l'agent.
+- Une session fermée affiche le bureau vide et assombri. Avec la réduction des animations activée sur le système, les personnages restent immobiles.
+
+Les sprites viennent des packs [MetroCity][metrocity] et [MetroCity Interior][metrocity-interior] de JIK-A-4 (aucune licence indiquée sur les pages). `scripts/office-assets.py` les extrait vers `web/public/office/` depuis le dossier des packs téléchargés (`python3 scripts/office-assets.py <dossier MetroCity>`, Pillow requis) : calques des personnages, comptoir sans la croix médicale, écran isolé, table, sol, mur et décor.
 
 ## Démarrage
 
@@ -152,6 +165,8 @@ Pour le serveur en local, depuis ce dossier : `PORT=3000 DATA_DIR=./data node se
 [^rebinding]: Protection DNS qui refuse les réponses pointant vers une adresse privée, pour empêcher un site web d'atteindre le réseau local.
 
 [claude-code]: https://code.claude.com/docs
+[metrocity]: https://jik-a-4.itch.io/metrocity-free-topdown-character-pack
+[metrocity-interior]: https://jik-a-4.itch.io/metrocity
 [git-for-windows]: https://gitforwindows.org/
 [hooks]: https://code.claude.com/docs/en/hooks
 [traefik]: https://traefik.io/traefik/
