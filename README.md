@@ -62,16 +62,19 @@ Pour un agent ou une tâche en cours, la fin estimée apparaît en pointillés, 
 
 ### Bureau
 
-Une vue en pixel art de la session : l'agent principal derrière le comptoir d'accueil (veste orange), chaque sous-agent en cours à sa propre table.
+Une vue en pixel art de la session : l'agent principal derrière le comptoir d'accueil (veste orange), chaque sous-agent en cours à sa propre table, et un coin salon à droite (meuble avec machine à café, grande TV au mur, table basse sur un tapis, canapé, lampadaire, plante ; la bibliothèque est contre le mur du bureau).
 
-- Un sous-agent reçoit une table à son démarrage (la première libre) et la libère en partant ; une rangée de trois tables s'ajoute quand toutes sont prises.
+- Un sous-agent reçoit une table à son démarrage (au plus près de son parent s'il en a un, sinon la première libre), entre par la porte et marche jusqu'à elle. À sa fin, il affiche une coche, se lève et ressort par la porte ; sa table est libérée. Une rangée de trois tables s'ajoute quand toutes sont prises. À l'ouverture de la vue, les agents déjà là sont directement à leur place.
 - Un type d'agent a toujours la même apparence : `Explore`, `general-purpose` et `Plan` ont un look fixe, les autres types en reçoivent un parmi huit, sans doublon dans une même session tant qu'il en reste. La veste orange est réservée à l'agent principal.
-- Animation selon le dernier outil : lecture (`Read`, `Grep`, `Glob`, `WebFetch`, `WebSearch`, `ToolSearch`) avec une feuille posée sur le bureau, que l'agent regarde régulièrement en tournant la tête, et un voyant vert sous l'écran ; frappe pour tous les autres outils (bras en alternance, voyant bleu clignotant) ; immobile au repos ou en attente de permission.
-- Bulles, à droite de la tête : « … » ambre quand la session attend une permission, coche verte pendant 2,5 secondes en fin de tour ou à la fin d'un sous-agent, « ! » rouge pour un sous-agent interrompu ou une session en erreur, « z » pour une session ou un agent sans nouvelles depuis 10 minutes.
-- Au-dessus de chaque personnage : son nom (« Agent principal », « #3 Explore ») et l'outil en cours. Le survol affiche la tâche, l'état, l'outil et la durée ; un clic ouvre le détail de l'agent.
-- Une session fermée affiche le bureau vide et assombri. Avec la réduction des animations activée sur le système, les personnages restent immobiles.
+- Au bureau, l'animation suit le dernier outil : lecture (`Read`, `Grep`, `Glob`, `WebFetch`, `WebSearch`, `ToolSearch`) avec une feuille posée sur le bureau, que l'agent regarde régulièrement, et un voyant vert sous l'écran ; frappe pour tous les autres outils (bras en alternance, voyant bleu clignotant) ; immobile au repos.
+- Au repos depuis 30 secondes, un agent part en pause (quelques secondes après l'ouverture de la vue s'il l'était déjà) : café (la machine fume), canapé devant la TV (l'écran s'anime), bibliothèque ou plante, 15 à 40 secondes par activité, puis le plus souvent une autre, sinon un court passage à son bureau. Dès qu'il reprend le travail ou qu'une permission est demandée, il retourne à son bureau et ne tape qu'une fois assis. Une session sans nouvelles depuis 10 minutes fait la sieste sur le canapé.
+- Bulles, à droite de la tête : « … » ambre quand la session attend une permission, coche verte en fin de tour ou à la fin d'un sous-agent, « ! » rouge pour un sous-agent interrompu ou une session en erreur, « z » pour une session ou un agent sans nouvelles.
+- Au-dessus de chaque personnage : son nom (« Agent principal », « #3 Explore ») et l'outil en cours, ou ce qu'il fait (« Au repos », « Pause café… », « Devant la TV », « Permission demandée », « Repart »). Le survol affiche la tâche, l'état, l'outil et la durée ; un clic ouvre le détail de l'agent.
+- À la fermeture de la session, tout le monde sort par la porte et le bureau s'assombrit. Avec la réduction des animations activée sur le système, personne ne se déplace : chacun reste à son bureau.
 
-Les sprites viennent des packs [MetroCity][metrocity] et [MetroCity Interior][metrocity-interior] de JIK-A-4 (aucune licence indiquée sur les pages). `scripts/office-assets.py` les extrait vers `web/public/office/` depuis le dossier des packs téléchargés (`python3 scripts/office-assets.py <dossier MetroCity>`, Pillow requis) : calques des personnages, comptoir sans la croix médicale, écran isolé, table, sol, mur et décor.
+Le code est dans `web/src/components/office/` : plan de la pièce et trajets sur une grille de 16 px (`layout.ts`), comportement des personnages (`engine.ts`), dessin trié par profondeur (`draw.ts`), sprites et apparences (`assets.ts`), composant et étiquettes (`index.tsx`).
+
+Les sprites viennent des packs [MetroCity][metrocity] et [MetroCity Interior][metrocity-interior] de JIK-A-4 (aucune licence indiquée sur les pages). `scripts/office-assets.py` les extrait vers `web/public/office/` depuis le dossier des packs téléchargés (`python3 scripts/office-assets.py <dossier MetroCity>`, Pillow requis) : calques des personnages, comptoir sans la croix médicale, écran isolé, table, sol, mur, décor et coin salon (la machine à café est dessinée en code).
 
 ## Démarrage
 

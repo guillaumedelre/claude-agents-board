@@ -59,3 +59,10 @@ save(load("Interior/Home/Paintings-Sheet.png").crop((199, 7, 217, 28)), "paintin
 tiles = load("Interior/Home/TilesHouse.png")
 save(tiles.crop((16, 0, 64, 64)), "wall.png")
 save(tiles.crop((96, 128, 128, 160)), "floor.png")
+
+# Lounge: kitchen cabinet (coffee machine drawn in code), flat TV, low table (same as the desks), sofa seen from behind, carpet, floor lamp
+save(load("Interior/Home/Kitchen-Sheet.png").crop((799, 21, 833, 55)), "cabinet.png")
+save(load("Interior/Home/TV-Sheet.png").crop((136, 2, 184, 29)), "tv.png")
+save(load("Interior/Home/LivingRoom1-Sheet.png").crop((120, 121, 168, 142)), "sofa.png")
+save(load("Interior/Home/Carpet-Sheet.png").crop((128, 0, 192, 64)), "carpet.png")
+save(load("Interior/Home/Lights-Sheet.png").crop((152, 0, 168, 32)), "lamp.png")
