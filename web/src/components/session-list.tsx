@@ -241,7 +241,7 @@ function MainThread({ session: s, display, selected, now }: { session: SessionSu
     >
       <span className="flex items-center gap-2 text-xs">
         <StatusDot status={display} className="size-2" />
-        <span className="min-w-0 flex-1 truncate font-medium">Session principale</span>
+        <span className="min-w-0 flex-1 truncate font-medium">Agent principal</span>
         {!working && <span className="shrink-0 text-[11px] text-muted-foreground">{ago(s.lastSeen, now)}</span>}
       </span>
       {working && s.lastTool && (

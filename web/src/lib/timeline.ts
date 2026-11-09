@@ -107,7 +107,7 @@ export function buildLanes(s: SessionDetail, agentId: string | null, now: number
     lanes.push({
       key: "session",
       kind: "session",
-      label: "Session principale",
+      label: "Agent principal",
       detail: `${s.turns.length} tour${s.turns.length > 1 ? "s" : ""}${open ? " · en cours" : ""}`,
       depth: 0,
       bars: s.turns.map((t, i) => {

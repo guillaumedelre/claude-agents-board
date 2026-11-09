@@ -23,7 +23,7 @@ La liste est organisée par machine (nom envoyé par le hook, voir plus bas), pu
 Noms affichés :
 
 - Session : « Session N », numérotée à son arrivée par machine et par projet, sans jamais réutiliser un numéro, ou le nom donné à la main (crayon à côté du titre dans le détail). Le sujet en cours (titre que donne Claude Code, sinon dernier prompt) s'affiche en dessous et peut changer.
-- Dans l'arbre d'une session : « Session principale » (le fil principal et son dernier outil), puis ses sous-agents.
+- Dans l'arbre d'une session : « Agent principal » (le fil principal et son dernier outil), puis ses sous-agents.
 - Sous-agent : « #N », son numéro d'ordre dans la session, son type et le nom de sa tâche (la description passée à l'outil `Agent`). Un agent lancé avant l'installation des hooks n'a pas de tâche connue : « Tâche inconnue · <début de son identifiant> ».
 
 - Par session : dossier de projet, machine, modèle, mode de permission, état (en cours, au repos, en attente de toi, fermée, sans nouvelles depuis 10 minutes), prompts, appels d'outils (entrée et sortie, tronquées à 4 000 caractères), réponse finale de chaque tour.
