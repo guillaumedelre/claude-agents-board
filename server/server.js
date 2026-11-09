@@ -199,6 +199,7 @@ function getSession(e, host, now) {
       permissionMode: null,
       status: 'idle',
       attention: null,
+      attentionAgent: null,
       startedAt: now,
       lastSeen: now,
       endedAt: null,
@@ -412,6 +413,7 @@ function handle(e, host) {
       if (sub) break;
       s.status = 'running';
       s.attention = null;
+      s.attentionAgent = null;
       openTurn(s, now);
       countActivity('prompts', now);
       push(s, { kind: 'prompt', text: clip(e.prompt, TEXT_LIMIT), source: e.source || 'user' });
@@ -420,6 +422,7 @@ function handle(e, host) {
       if (sub) sub.status = 'running';
       else s.status = 'running';
       s.attention = null;
+      s.attentionAgent = null;
       const summary = toolSummary(e.tool_name, e.tool_input);
       thread.lastTool = { tool: e.tool_name, summary, at: now };
       if (!findTool(thread, e.tool_use_id)) {
@@ -505,6 +508,7 @@ function handle(e, host) {
       if (sub) break;
       s.status = 'idle';
       s.attention = null;
+      s.attentionAgent = null;
       closeTurn(s, now);
       if (e.last_assistant_message) push(s, { kind: 'message', text: clip(e.last_assistant_message, TEXT_LIMIT) });
       break;
@@ -515,7 +519,11 @@ function handle(e, host) {
       break;
     case 'Notification':
       // idle_prompt arrive 60 s après tout tour terminé : la session est au repos, pas bloquée
-      if (e.notification_type !== 'idle_prompt') s.attention = clip(e.message, 300) || 'En attente';
+      if (e.notification_type !== 'idle_prompt') {
+        s.attention = clip(e.message, 300) || 'En attente';
+        // Sous-agent qui demande la permission, s'il est indiqué
+        s.attentionAgent = e.agent_id || null;
+      }
       push(s, { kind: 'notice', text: clip(e.message, 300) || 'Notification' });
       break;
     case 'SessionEnd':
@@ -523,6 +531,7 @@ function handle(e, host) {
       s.endedAt = now;
       closeTurn(s, now);
       s.attention = null;
+      s.attentionAgent = null;
       for (const a of Object.values(s.agents)) if (a.status === 'running') a.status = 'stopped';
       push(s, { kind: 'notice', text: `Session terminée (${e.reason || 'fin'})` });
       break;

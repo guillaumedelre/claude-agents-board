@@ -54,6 +54,7 @@ type SessionBase = {
   permissionMode: string | null
   status: SessionStatus
   attention: string | null
+  attentionAgent?: string | null // sous-agent à l'origine de la demande, absent des anciennes sessions
   startedAt: number
   lastSeen: number
   endedAt: number | null

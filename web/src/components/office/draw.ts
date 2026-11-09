@@ -9,6 +9,7 @@ export type Scene = {
   height: number
   zoom: number
   closed: boolean
+  outlined?: string[] // survolés ou sélectionnés : contour blanc
 }
 
 const DIR_ROW: Record<Dir, number> = { down: 0, right: 1, up: 2, left: 3 }
@@ -27,7 +28,7 @@ function frameOf(a: Actor, tick: number) {
 const atHome = (a: Actor) => a.mode === "seated"
 
 export function draw(canvas: HTMLCanvasElement, sp: Sprites, scene: Scene, tick: number) {
-  const { actors, deskCount, seats, height, zoom, closed } = scene
+  const { actors, deskCount, seats, height, zoom, closed, outlined = [] } = scene
   if (canvas.width !== W * zoom || canvas.height !== height * zoom) return
   const ctx = canvas.getContext("2d")!
   ctx.setTransform(zoom, 0, 0, zoom, 0, 0)
@@ -49,7 +50,7 @@ export function draw(canvas: HTMLCanvasElement, sp: Sprites, scene: Scene, tick:
 
   // Meubles et personnages triés par la ligne de leurs pieds : un personnage derrière un meuble est caché par lui
   const items: { y: number; draw: () => void }[] = []
-  for (const a of actors) items.push({ y: a.y, draw: () => drawActor(ctx, sp, a, tick) })
+  for (const a of actors) items.push({ y: a.y, draw: () => drawActor(ctx, sp, a, tick, outlined.includes(a.id)) })
 
   items.push({
     y: COUNTER.y + COUNTER.h,
@@ -87,6 +88,8 @@ export function draw(canvas: HTMLCanvasElement, sp: Sprites, scene: Scene, tick:
   items.sort((a, b) => a.y - b.y)
   for (const it of items) it.draw()
 
+  for (const a of actors) if (atHome(a) && a.wish && a.wish.activity !== "idle") drawGlow(ctx, a.x, a.y, a.wish.activity, tick)
+
   for (const a of actors) {
     const mark = a.wish?.mark ?? null
     if (mark) drawBubble(ctx, a.x + 15, a.y - 26, mark, tick)
@@ -98,17 +101,44 @@ export function draw(canvas: HTMLCanvasElement, sp: Sprites, scene: Scene, tick:
   }
 }
 
-function drawActor(ctx: CanvasRenderingContext2D, sp: Sprites, a: Actor, tick: number) {
+// Toile de travail réutilisée pour composer un personnage et sa silhouette
+let work: { sprite: HTMLCanvasElement; mask: HTMLCanvasElement } | null = null
+
+function drawActor(ctx: CanvasRenderingContext2D, sp: Sprites, a: Actor, tick: number, outline = false) {
   const frame = frameOf(a, tick)
   const x = Math.round(a.x - 16)
   const y = Math.round(a.y - 30)
-  for (const [sheet, row] of [
+  const layers = [
     [sp.body, a.look.skin],
     [sp.outfits, a.look.outfit],
     [sp.hairs, a.look.hair],
-  ] as const) {
-    ctx.drawImage(sheet, frame * 32, row * 32, 32, 32, x, y, 32, 32)
+  ] as const
+  if (!outline) {
+    for (const [sheet, row] of layers) ctx.drawImage(sheet, frame * 32, row * 32, 32, 32, x, y, 32, 32)
+    return
   }
+  work ??= { sprite: document.createElement("canvas"), mask: document.createElement("canvas") }
+  const { sprite, mask } = work
+  sprite.width = sprite.height = mask.width = mask.height = 32
+  const s = sprite.getContext("2d")!
+  for (const [sheet, row] of layers) s.drawImage(sheet, frame * 32, row * 32, 32, 32, 0, 0, 32, 32)
+  const m = mask.getContext("2d")!
+  m.drawImage(sprite, 0, 0)
+  m.globalCompositeOperation = "source-in"
+  m.fillStyle = "#ffffff"
+  m.fillRect(0, 0, 32, 32)
+  for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) ctx.drawImage(mask, x + dx, y + dy)
+  ctx.drawImage(sprite, x, y)
+}
+
+// Lueur bleutée de l'écran (vu de dos) sur le visage et le bureau, qui vacille pendant la frappe
+function drawGlow(ctx: CanvasRenderingContext2D, x: number, y: number, activity: Activity, tick: number) {
+  const alpha = activity === "typing" ? [0.2, 0.16, 0.22, 0.18][tick % 4] : 0.16
+  const g = ctx.createRadialGradient(x, y - 10, 1, x, y - 10, 16)
+  g.addColorStop(0, `rgba(140, 195, 255, ${alpha})`)
+  g.addColorStop(1, "rgba(140, 195, 255, 0)")
+  ctx.fillStyle = g
+  ctx.fillRect(x - 16, y - 26, 32, 32)
 }
 
 // Voyant sous l'écran (bleu clignotant en frappe, vert en lecture) et feuille posée pendant la lecture

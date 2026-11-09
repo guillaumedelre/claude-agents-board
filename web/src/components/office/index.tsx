@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { go } from "@/hooks/use-board"
 import { agentLabel, duration } from "@/lib/format"
@@ -17,6 +18,17 @@ const READ_TOOLS = new Set(["Read", "Grep", "Glob", "WebFetch", "WebSearch", "To
 
 const activityOf = (tool: LastTool | null | undefined, working: boolean): Activity =>
   !working ? "idle" : tool && READ_TOOLS.has(tool.tool) ? "reading" : "typing"
+
+const LABELS_KEY = "agents.officeLabels"
+type LabelMode = "always" | "hover"
+
+function readLabelMode(): LabelMode {
+  try {
+    return localStorage.getItem(LABELS_KEY) === "hover" ? "hover" : "always"
+  } catch {
+    return "always"
+  }
+}
 
 const reducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches
 
@@ -91,12 +103,27 @@ export function Office({ session: s, agentId, now }: { session: SessionDetail; a
   const deskCount = Math.max(COLS, Math.ceil((Math.max(-1, ...seats.values()) + 1) / COLS) * COLS)
   const height = sceneHeight(deskCount)
   const zoom = Math.max(1, Math.min(3, Math.floor(width / W)))
+  const [labelMode, setLabelMode] = useState(readLabelMode)
+  const [hover, setHover] = useState<string | null>(null)
+  const pickLabelMode = (v: string) => {
+    if (v !== "always" && v !== "hover") return
+    setLabelMode(v)
+    try {
+      localStorage.setItem(LABELS_KEY, v)
+    } catch {
+      /* préférence non retenue */
+    }
+  }
+  // Permission demandée par un sous-agent présent : la bulle va sur lui, sinon sur l'agent principal
+  const waiting = display === "attention" && s.attentionAgent && present.some((a) => a.id === s.attentionAgent) ? s.attentionAgent : "main"
 
   const wishes: Wish[] = []
   if (!closed) {
     const mainMark: Mark =
       display === "attention"
-        ? "wait"
+        ? waiting === "main"
+          ? "wait"
+          : null
         : display === "stale"
           ? "sleep"
           : display === "error"
@@ -123,7 +150,7 @@ export function Office({ session: s, agentId, now }: { session: SessionDetail; a
         home: seatHome(seat),
         look: looks.get(a.type ?? "agent") ?? LOOKS[0],
         activity: activityOf(a.lastTool, shown === "running"),
-        mark: shown === "done" ? "done" : shown === "stopped" ? "error" : shown === "stale" ? "sleep" : null,
+        mark: waiting === a.id ? "wait" : shown === "done" ? "done" : shown === "stopped" ? "error" : shown === "stale" ? "sleep" : null,
         atDesk: true,
         nap: false,
         idleSince: a.lastSeen,
@@ -134,8 +161,10 @@ export function Office({ session: s, agentId, now }: { session: SessionDetail; a
   // Le moteur vit hors de React ; la boucle de dessin lit toujours la dernière scène
   const engine = useRef<Engine | null>(null)
   engine.current ??= new Engine(new Grid(height, deskCount), reducedMotion())
-  const scene = useRef({ deskCount, height, zoom, closed, seats })
-  scene.current = { deskCount, height, zoom, closed, seats }
+  const selectedId = agentId && agentId !== "main" ? agentId : null
+  const outlined = [hover, selectedId].filter((id): id is string => id != null)
+  const scene = useRef({ deskCount, height, zoom, closed, seats, outlined })
+  scene.current = { deskCount, height, zoom, closed, seats, outlined }
   const wishKey = JSON.stringify(wishes)
   useEffect(() => {
     const e = engine.current!
@@ -181,6 +210,9 @@ export function Office({ session: s, agentId, now }: { session: SessionDetail; a
   }, [sprites])
 
   const byId = new Map(agents.map((a) => [a.id, a]))
+  // Lu dans les souhaits du rendu courant : le moteur ne les reçoit qu'après
+  const wishById = new Map(wishes.map((w) => [w.id, w]))
+  const alert = new Set(wishes.filter((w) => w.mark === "wait" || w.mark === "error").map((w) => w.id))
   const actors = cast ? [...(engine.current?.actors.values() ?? [])] : []
   const bind = (id: string) => (el: HTMLElement | null) => {
     const list = (overlays.current.get(id) ?? []).filter((x) => x.isConnected)
@@ -210,27 +242,42 @@ export function Office({ session: s, agentId, now }: { session: SessionDetail; a
               agent={a.id === "main" ? undefined : byId.get(a.id)}
               session={s}
               zoom={zoom}
-              selected={a.id !== "main" && a.id === agentId}
+              selected={a.id === selectedId}
+              showLabel={labelMode === "always" || hover === a.id || a.id === selectedId || alert.has(a.id)}
+              onHover={(on) => setHover((h) => (on ? a.id : h === a.id ? null : h))}
               now={now}
+              wish={wishById.get(a.id) ?? a.wish}
               bind={bind(a.id)}
             />
           ))}
         </div>
       </div>
-      <p className="text-center text-[11px] text-muted-foreground">
-        Sprites :{" "}
-        <a className="underline underline-offset-2" href="https://jik-a-4.itch.io/metrocity" target="_blank" rel="noreferrer">
-          MetroCity
-        </a>{" "}
-        par JIK-A-4
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
+        <span className="flex items-center gap-2">
+          Étiquettes :
+          <ToggleGroup type="single" variant="outline" size="sm" value={labelMode} onValueChange={pickLabelMode}>
+            <ToggleGroupItem value="always" className="h-6 text-[11px]">
+              toujours
+            </ToggleGroupItem>
+            <ToggleGroupItem value="hover" className="h-6 text-[11px]">
+              au survol
+            </ToggleGroupItem>
+          </ToggleGroup>
+        </span>
+        <span>
+          Sprites :{" "}
+          <a className="underline underline-offset-2" href="https://jik-a-4.itch.io/metrocity" target="_blank" rel="noreferrer">
+            MetroCity
+          </a>{" "}
+          par JIK-A-4
+        </span>
+      </div>
     </div>
   )
 }
 
 // Ce que fait le personnage, quand il ne travaille pas : remplace la ligne de l'outil
-function doing(a: Actor): string | null {
-  const w = a.wish
+function doing(a: Actor, w: Wish | null): string | null {
   if (a.mode === "leaving") return "Repart"
   if (w?.mark === "wait") return "Permission demandée"
   if (w?.nap && a.mode === "spot") return "Sieste"
@@ -246,7 +293,10 @@ function Person({
   session: s,
   zoom,
   selected,
+  showLabel,
+  onHover,
   now,
+  wish,
   bind,
 }: {
   actor: Actor
@@ -254,15 +304,18 @@ function Person({
   session: SessionDetail
   zoom: number
   selected: boolean
+  showLabel: boolean
+  onHover: (on: boolean) => void
   now: number
+  wish: Wish | null
   bind: (el: HTMLElement | null) => void
 }) {
   const main = a.id === "main"
   const name = main ? "Agent principal" : `#${agent?.number ?? "?"} ${agent?.type ?? "agent"}`
   const tool = main ? s.lastTool : agent?.lastTool
-  const working = a.wish != null && a.wish.activity !== "idle"
+  const working = wish != null && wish.activity !== "idle"
   const status = main ? LABELS[sessionDisplay(s, now)] : agent ? LABELS[agentDisplay(agent, now)] : ""
-  const note = doing(a)
+  const note = doing(a, wish)
   const place = (dx: number, dy: number) => ({ left: Math.round((a.x + dx) * zoom), top: Math.round((a.y + dy) * zoom) })
   return (
     <>
@@ -270,7 +323,10 @@ function Person({
         ref={bind}
         data-dx={0}
         data-dy={-27}
-        className="pointer-events-none absolute flex max-w-40 -translate-x-1/2 -translate-y-full flex-col items-center gap-0.5"
+        className={cn(
+          "pointer-events-none absolute flex max-w-40 -translate-x-1/2 -translate-y-full flex-col items-center gap-0.5",
+          !showLabel && "invisible",
+        )}
         style={place(0, -27)}
       >
         <span className="rounded border bg-background/90 px-1 text-[10px] leading-4 font-medium whitespace-nowrap shadow-sm">{name}</span>
@@ -291,11 +347,13 @@ function Person({
             data-dy={-34}
             type="button"
             aria-label={`${name}, ${note ?? status}${working && tool ? `, ${tool.tool}` : ""}`}
+            aria-current={selected || undefined}
             onClick={() => go(s.id, main ? null : a.id)}
-            className={cn(
-              "absolute h-0 w-0 rounded-md outline-none hover:bg-white/10 hover:ring-2 hover:ring-white/50 focus-visible:ring-2 focus-visible:ring-ring",
-              selected && "ring-2 ring-ring",
-            )}
+            onPointerEnter={() => onHover(true)}
+            onPointerLeave={() => onHover(false)}
+            onFocus={() => onHover(true)}
+            onBlur={() => onHover(false)}
+            className="absolute h-0 w-0 rounded-md outline-none"
             style={{ ...place(-18, -34), width: 36 * zoom, height: 38 * zoom }}
           />
         </TooltipTrigger>

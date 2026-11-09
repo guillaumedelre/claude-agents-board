@@ -1,6 +1,7 @@
-import { Activity, Loader2, Monitor, Radio, Unplug } from "lucide-react"
+import { Activity, Loader2, Monitor, Radio, Unplug, Volume2, VolumeX } from "lucide-react"
 import { CleanupMenu } from "@/components/cleanup-menu"
 import { ThemeMenu } from "@/components/theme-menu"
+import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { ago } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -19,6 +20,8 @@ export function StatusBar({
   onShowEnded,
   autoCleanupMs,
   ready,
+  sounds,
+  onSounds,
 }: {
   online: boolean
   hosts: number
@@ -31,6 +34,8 @@ export function StatusBar({
   onShowEnded: (v: boolean) => void
   autoCleanupMs: number
   ready: boolean
+  sounds: boolean
+  onSounds: (v: boolean) => void
 }) {
   return (
     <footer
@@ -85,6 +90,17 @@ export function StatusBar({
           </label>
         )}
         {ready && <CleanupMenu closedCount={endedCount} autoCleanupMs={autoCleanupMs} />}
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          className="text-inherit"
+          title={sounds ? "Sons : activés" : "Sons : désactivés"}
+          aria-pressed={sounds}
+          onClick={() => onSounds(!sounds)}
+        >
+          {sounds ? <Volume2 /> : <VolumeX />}
+          <span className="sr-only">Sons</span>
+        </Button>
         <ThemeMenu />
       </span>
     </footer>

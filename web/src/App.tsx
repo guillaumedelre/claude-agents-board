@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { go, useBoard, useHashRoute, useNow, useSession } from "@/hooks/use-board"
+import { useSounds } from "@/hooks/use-sounds"
 import { agentDisplay, isClosed, sessionDisplay } from "@/lib/status"
 import { cn } from "@/lib/utils"
 
@@ -24,6 +25,7 @@ function readShowEnded() {
 
 export default function App() {
   const { board, online } = useBoard()
+  const sounds = useSounds(board?.sessions)
   const { sessionId, agentId } = useHashRoute()
   const now = useNow()
   const [showEnded, setShowEnded] = useState(readShowEnded)
@@ -101,6 +103,8 @@ export default function App() {
         onShowEnded={setShowEnded}
         autoCleanupMs={autoCleanupMs}
         ready={!!board}
+        sounds={sounds.enabled}
+        onSounds={sounds.setEnabled}
       />
     </div>
   )
