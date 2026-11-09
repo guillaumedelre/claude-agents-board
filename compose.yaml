@@ -18,6 +18,7 @@ services:
             timeout: 10s
             retries: 3
             start_period: 10s
+            start_interval: 2s
         labels:
             homepage.group: IA
             homepage.name: Agents
