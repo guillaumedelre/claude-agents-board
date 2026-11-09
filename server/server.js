@@ -17,6 +17,8 @@ const MAX_SESSIONS = 300;
 const TEXT_LIMIT = 20000;
 const DETAIL_LIMIT = 4000;
 const PENDING_TTL = 10 * 60e3;
+const MAX_TURNS = 200;
+const MAX_TASKS = 200;
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -177,6 +179,9 @@ function getSession(e, host, now) {
       pending: [],
     };
   }
+  // Sessions enregistrées avant l'ajout de la timeline
+  s.turns ??= [];
+  s.tasks ??= {};
   s.lastSeen = now;
   s.host = host;
   if (e.cwd && !e.agent_id) s.currentCwd = e.cwd;
@@ -211,6 +216,95 @@ function getAgent(s, id, type, now) {
   a.lastSeen = now;
   if (type && !a.type) a.type = type;
   return a;
+}
+
+// --- Timeline : tours de conversation et tâches ---
+
+function closeTurn(s, now) {
+  const t = s.turns.at(-1);
+  if (t && t.end == null) t.end = now;
+}
+
+function openTurn(s, now) {
+  closeTurn(s, now);
+  s.turns.push({ start: now, end: null });
+  if (s.turns.length > MAX_TURNS) s.turns.splice(0, s.turns.length - MAX_TURNS);
+}
+
+function upsertTask(s, id, fields, now) {
+  let t = s.tasks[id];
+  if (!t) {
+    t = s.tasks[id] = { id, subject: null, description: null, activeForm: null, status: 'pending', owner: null, createdAt: now, startedAt: null, completedAt: null };
+    const ids = Object.keys(s.tasks);
+    if (ids.length > MAX_TASKS) delete s.tasks[ids[0]];
+  }
+  for (const [k, v] of Object.entries(fields)) if (v != null) t[k] = v;
+  return t;
+}
+
+function setTaskStatus(t, status, now) {
+  if (status === 'in_progress') {
+    t.startedAt ??= now;
+    t.completedAt = null;
+  } else if (status === 'completed') {
+    t.completedAt ??= now;
+  } else if (status === 'pending') {
+    t.startedAt = null;
+    t.completedAt = null;
+  }
+  t.status = status;
+}
+
+function trackTaskTool(s, e, now) {
+  const i = e.tool_input || {};
+  if (e.tool_name === 'TaskUpdate' && i.taskId != null) {
+    const id = String(i.taskId);
+    if (i.status === 'deleted') return void delete s.tasks[id];
+    const t = upsertTask(s, id, { subject: clip(i.subject, 200), description: clip(i.description, 2000), activeForm: clip(i.activeForm, 200) }, now);
+    if (i.status) setTaskStatus(t, i.status, now);
+  } else if (e.tool_name === 'TodoWrite' && Array.isArray(i.todos)) {
+    // TodoWrite renvoie la liste complète : une tâche absente a été retirée
+    const seen = new Set();
+    for (const todo of i.todos) {
+      if (!todo || typeof todo.content !== 'string') continue;
+      const id = `todo:${todo.content.slice(0, 200)}`;
+      seen.add(id);
+      const t = upsertTask(s, id, { subject: clip(todo.content, 200), activeForm: clip(todo.activeForm, 200), owner: e.agent_id }, now);
+      if (todo.status && todo.status !== t.status) setTaskStatus(t, todo.status, now);
+    }
+    for (const id of Object.keys(s.tasks)) if (id.startsWith('todo:') && !seen.has(id)) delete s.tasks[id];
+  }
+}
+
+const median = (xs) => {
+  const a = [...xs].sort((x, y) => x - y);
+  const m = a.length >> 1;
+  return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+};
+
+// Durée médiane des agents terminés, par type : ceux du même projet d'abord, tous les projets sinon
+function estimatesFor(cwd) {
+  const local = { agents: {}, tasks: [] };
+  const all = { agents: {}, tasks: [] };
+  for (const s of Object.values(state.sessions)) {
+    const scopes = s.cwd === cwd ? [local, all] : [all];
+    for (const a of Object.values(s.agents)) {
+      if (a.status !== 'done' || !a.endedAt) continue;
+      const d = a.durationMs ?? a.endedAt - a.startedAt;
+      for (const sc of scopes) (sc.agents[a.type || 'agent'] ??= []).push(d);
+    }
+    for (const t of Object.values(s.tasks ?? {})) {
+      if (t.completedAt && t.startedAt) for (const sc of scopes) sc.tasks.push(t.completedAt - t.startedAt);
+    }
+  }
+  const pick = (l = [], g = []) =>
+    l.length >= 3 ? { median: median(l), n: l.length, scope: 'project' } : g.length >= 3 ? { median: median(g), n: g.length, scope: 'all' } : null;
+  const agents = {};
+  for (const type of Object.keys(all.agents)) {
+    const est = pick(local.agents[type], all.agents[type]);
+    if (est) agents[type] = est;
+  }
+  return { agents, tasks: pick(local.tasks, all.tasks) };
 }
 
 const SPAWN_KEYS = ['toolUseId', 'type', 'description', 'prompt', 'parentId'];
@@ -267,6 +361,7 @@ function handle(e, host) {
       if (sub) break;
       s.status = 'running';
       s.attention = null;
+      openTurn(s, now);
       push(s, { kind: 'prompt', text: clip(e.prompt, TEXT_LIMIT), source: e.source || 'user' });
       break;
     case 'PreToolUse': {
@@ -295,6 +390,7 @@ function handle(e, host) {
           at: now,
         });
       }
+      trackTaskTool(s, e, now);
       break;
     }
     case 'PostToolUse':
@@ -319,6 +415,14 @@ function handle(e, host) {
       if (ok && e.tool_name === 'Agent' && e.tool_response && typeof e.tool_response.agentId === 'string') {
         linkSpawn(s, e.tool_use_id, e.tool_response, now);
       }
+      if (ok && e.tool_name === 'TaskCreate' && e.tool_response) {
+        const r = e.tool_response;
+        const id = r.task?.id ?? r.taskId ?? r.id;
+        const i = e.tool_input || {};
+        if (id != null) {
+          upsertTask(s, String(id), { subject: clip(i.subject, 200), description: clip(i.description, 2000), activeForm: clip(i.activeForm, 200), owner: e.agent_id }, now);
+        }
+      }
       break;
     }
     case 'SubagentStart': {
@@ -334,14 +438,24 @@ function handle(e, host) {
       sub.endedAt = now;
       if (e.last_assistant_message) sub.result = clip(e.last_assistant_message, TEXT_LIMIT);
       break;
+    case 'TaskCreated':
+      if (e.task_id == null) break;
+      upsertTask(s, String(e.task_id), { subject: clip(e.task_subject, 200), description: clip(e.task_description, 2000), owner: e.agent_id }, now);
+      break;
+    case 'TaskCompleted':
+      if (e.task_id == null) break;
+      setTaskStatus(upsertTask(s, String(e.task_id), { subject: clip(e.task_subject, 200) }, now), 'completed', now);
+      break;
     case 'Stop':
       if (sub) break;
       s.status = 'idle';
       s.attention = null;
+      closeTurn(s, now);
       if (e.last_assistant_message) push(s, { kind: 'message', text: clip(e.last_assistant_message, TEXT_LIMIT) });
       break;
     case 'StopFailure':
       s.status = 'error';
+      if (!sub) closeTurn(s, now);
       push(thread, { kind: 'error', text: clip(e.error_details || format(e.error) || 'Erreur', DETAIL_LIMIT) });
       break;
     case 'Notification':
@@ -351,6 +465,7 @@ function handle(e, host) {
     case 'SessionEnd':
       s.status = 'ended';
       s.endedAt = now;
+      closeTurn(s, now);
       s.attention = null;
       for (const a of Object.values(s.agents)) if (a.status === 'running') a.status = 'stopped';
       push(s, { kind: 'notice', text: `Session terminée (${e.reason || 'fin'})` });
@@ -396,6 +511,8 @@ const summaryOf = (s) => ({
   ...s,
   events: undefined,
   pending: undefined,
+  turns: undefined,
+  tasks: undefined,
   eventCount: s.events.length,
   lastEvent: s.events.findLast((x) => x.kind === 'prompt' || x.kind === 'message') ?? null,
   firstPrompt: s.events.find((x) => x.kind === 'prompt')?.text?.slice(0, 200) ?? null,
@@ -457,7 +574,7 @@ async function api(req, res, pathname) {
     }
     const s = parts.length === 3 ? state.sessions[parts[2]] : null;
     if (!s) return json(res, 404, { error: 'not found' });
-    if (req.method === 'GET') return json(res, 200, { ...s, pending: undefined });
+    if (req.method === 'GET') return json(res, 200, { ...s, pending: undefined, estimates: estimatesFor(s.cwd) });
     if (req.method === 'DELETE') {
       delete state.sessions[s.id];
       changed(s.id);

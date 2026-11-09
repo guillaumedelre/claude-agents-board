@@ -7,7 +7,7 @@ Tableau de bord web des sessions [Claude Code][claude-code] et de leurs sous-age
   - `GET /api/health`
   - `POST /api/hooks` : reçoit le JSON d'un hook Claude Code tel quel (en-têtes optionnels `X-Agent-Host`, `X-Hook-Token`)
   - `GET /api/sessions` : résumé de toutes les sessions (sans les chronologies)
-  - `GET /api/sessions/:id` : session complète, avec la chronologie de chaque agent
+  - `GET /api/sessions/:id` : session complète, avec la chronologie de chaque agent, les tours de conversation, les tâches et les estimations de durée
   - `DELETE /api/sessions/:id` : retire une session du tableau ; `DELETE /api/sessions` retire toutes les sessions fermées
   - `GET /api/stream` : flux [SSE][sse] qui signale chaque changement (l'interface recharge alors les données)
 - Stockage : volume nommé `agents_data` (`/data/state.json`), écrit au plus une fois par seconde. Les sessions sans activité depuis `RETENTION_DAYS` jours (7 par défaut) sont supprimées, avec 300 sessions au maximum et 500 événements par fil.
@@ -18,6 +18,19 @@ Tableau de bord web des sessions [Claude Code][claude-code] et de leurs sous-age
 - Par agent : type, description, consigne complète, arborescence parent / sous-agents, dernier outil utilisé, chronologie de ses outils, rapport final, tokens et durée (agents au premier plan uniquement).
 
 Les hooks ne transmettent pas les messages intermédiaires du modèle, seulement le dernier message de chaque tour (`Stop`, `SubagentStop`).
+
+Le détail d'une session ou d'un agent a deux vues : « Journal » (la chronologie ci-dessus) et « Timeline ».
+
+### Timeline
+
+Vue de type Gantt, rafraîchie chaque seconde, sur 5 minutes, 30 minutes, 2 heures ou toute l'activité (par défaut) :
+
+- une ligne pour la session principale, avec une barre par tour de conversation (du prompt à la fin de la réponse) ;
+- une ligne par agent, dans l'ordre de l'arborescence, de son lancement à sa fin ;
+- une ligne par tâche de la liste de tâches de Claude (outils `TaskCreate` / `TaskUpdate` et événements `TaskCreated` / `TaskCompleted`, ou l'ancien outil `TodoWrite`) : un cercle tant qu'elle attend, une barre une fois commencée ;
+- sous chaque barre, les appels d'outils (rouges en cas d'échec).
+
+Pour un agent ou une tâche en cours, la fin estimée apparaît en pointillés, et le dépassement en orange. L'estimation est la durée médiane des agents du même type (ou des tâches) déjà terminés : sur le même projet s'il y en a au moins 3, sinon sur tous les projets, sinon aucune estimation. Elle est calculée par l'application, sans rien demander à Claude Code.
 
 ## Démarrage
 
@@ -66,7 +79,7 @@ Une session déjà ouverte n'est pas garantie de prendre en compte les nouveaux 
 
 ### Fonctionnement des hooks
 
-- Ce sont des hooks `command` qui envoient le JSON reçu sur l'entrée standard à `POST /api/hooks`, pour 11 événements (`SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `SubagentStart`, `SubagentStop`, `Stop`, `StopFailure`, `Notification`).
+- Ce sont des hooks `command` qui envoient le JSON reçu sur l'entrée standard à `POST /api/hooks`, pour 13 événements (`SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `SubagentStart`, `SubagentStop`, `Stop`, `StopFailure`, `Notification`, `TaskCreated`, `TaskCompleted`).
 - Ce ne sont pas des hooks `"type": "http"` : Claude Code refuse un hook HTTP vers une adresse privée (`10.0.0.10`) et n'autorise que le loopback.
 - Ils sont synchrones pour que les événements arrivent dans l'ordre : chaque appel d'outil attend la réponse de l'application. Si l'application ne répond pas, l'envoi abandonne au bout de 2 secondes et Claude Code continue : un hook en échec ne bloque pas l'agent.
 - Sous Windows, Claude Code exécute les hooks [avec Git Bash s'il est installé, sinon avec PowerShell][hooks]. Le script détecte Git Bash : avec lui, le hook est une commande `curl.exe` ; sans lui, une commande `Invoke-RestMethod`, plus lente car PowerShell met plusieurs centaines de millisecondes à démarrer, deux fois par appel d'outil. La commande PowerShell a été testée avec PowerShell 7 sous Linux, pas sous Windows.
@@ -103,6 +116,8 @@ Pour le serveur en local, depuis ce dossier : `PORT=3000 DATA_DIR=./data node se
 - Pas d'authentification sur l'interface : les prompts, les commandes et le contenu des fichiers lus par les agents sont lisibles par tout appareil du réseau local. Sans `HOOK_TOKEN`, n'importe quel appareil du réseau peut aussi envoyer de faux événements.
 - Les agents lancés par un workflow n'ont pas d'appel Agent : leur consigne et leur description sont inconnues.
 - L'association d'un sous-agent à l'appel qui l'a lancé est provisoire jusqu'au `PostToolUse` de cet appel (le plus ancien appel en attente du même type est retenu au démarrage).
+- Les estimations ne portent que sur l'historique conservé (`RETENTION_DAYS`) : retirer une session du tableau retire aussi ses durées de l'historique.
+- Une machine branchée avant l'ajout des événements `TaskCreated` / `TaskCompleted` voit ses tâches via les outils `TaskCreate` / `TaskUpdate` ; relancer le script d'installation ajoute ces deux événements.
 - Une session fermée sans `SessionEnd` (plantage, terminal tué) reste « en cours », puis passe à « sans nouvelles » après 10 minutes sans événement.
 
 [^rebinding]: Protection DNS qui refuse les réponses pointant vers une adresse privée, pour empêcher un site web d'atteindre le réseau local.

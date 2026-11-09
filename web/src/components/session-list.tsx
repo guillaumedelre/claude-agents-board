@@ -87,7 +87,7 @@ function SessionCard({ session: s, selection, now }: { session: SessionSummary; 
           )}
           {s.agents.length > 0 && (
             <Badge variant="outline" className="text-[11px]">
-              {running > 0 ? `${running}/${s.agents.length} agents actifs` : `${s.agents.length} agents`}
+              {running > 0 ? `${running}/${s.agents.length} agent${running > 1 ? "s" : ""} actif${running > 1 ? "s" : ""}` : `${s.agents.length} agent${s.agents.length > 1 ? "s" : ""}`}
             </Badge>
           )}
           {basename(s.currentCwd) !== basename(s.cwd) && (

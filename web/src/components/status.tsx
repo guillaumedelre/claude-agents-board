@@ -68,6 +68,8 @@ const ICONS: Record<string, LucideIcon> = {
   Agent: Bot,
   Skill: Sparkles,
   TodoWrite: ListChecks,
+  TaskCreate: ListChecks,
+  TaskUpdate: ListChecks,
 }
 
 export function ToolIcon({ tool, className }: { tool?: string; className?: string }) {

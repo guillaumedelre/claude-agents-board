@@ -37,7 +37,8 @@ import json, os, sys
 
 path, url, host, token, uninstall = sys.argv[1:6]
 events = ["SessionStart", "SessionEnd", "UserPromptSubmit", "PreToolUse", "PostToolUse",
-          "PostToolUseFailure", "SubagentStart", "SubagentStop", "Stop", "StopFailure", "Notification"]
+          "PostToolUseFailure", "SubagentStart", "SubagentStop", "Stop", "StopFailure", "Notification",
+          "TaskCreated", "TaskCompleted"]
 
 cfg = {}
 if os.path.exists(path):

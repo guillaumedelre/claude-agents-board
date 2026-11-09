@@ -19,7 +19,8 @@ $settings = Join-Path $dir 'settings.json'
 New-Item -ItemType Directory -Force -Path $dir | Out-Null
 
 $events = 'SessionStart', 'SessionEnd', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse',
-  'PostToolUseFailure', 'SubagentStart', 'SubagentStop', 'Stop', 'StopFailure', 'Notification'
+  'PostToolUseFailure', 'SubagentStart', 'SubagentStop', 'Stop', 'StopFailure', 'Notification',
+  'TaskCreated', 'TaskCompleted'
 
 # Claude Code lance les hooks avec Git Bash s'il est installé, sinon avec PowerShell (plus lent à démarrer)
 $gitBash = @($env:CLAUDE_CODE_GIT_BASH_PATH, "$env:ProgramFiles\Git\bin\bash.exe") |

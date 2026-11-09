@@ -61,9 +61,30 @@ export type SessionSummary = SessionBase & {
   firstPrompt: string | null
 }
 
+export type Turn = { start: number; end: number | null }
+
+export type TaskStatus = "pending" | "in_progress" | "completed"
+
+export type Task = {
+  id: string
+  subject: string | null
+  description: string | null
+  activeForm: string | null
+  status: TaskStatus
+  owner: string | null
+  createdAt: number
+  startedAt: number | null
+  completedAt: number | null
+}
+
+export type Estimate = { median: number; n: number; scope: "project" | "all" }
+
 export type SessionDetail = SessionBase & {
   events: BoardEvent[]
   agents: Record<string, Agent>
+  turns: Turn[]
+  tasks: Record<string, Task>
+  estimates: { agents: Record<string, Estimate>; tasks: Estimate | null }
 }
 
 export type Board = { version: number; now: number; sessions: SessionSummary[] }
