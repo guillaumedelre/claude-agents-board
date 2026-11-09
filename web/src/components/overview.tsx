@@ -1,5 +1,6 @@
 import { BellRing, CheckCircle2, FolderGit2, Loader2, Monitor, type LucideIcon } from "lucide-react"
 import { ActivityHeatmap } from "@/components/activity-heatmap"
+import { OpenSpace } from "@/components/openspace"
 import { StatusDot, ToolIcon } from "@/components/status"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { go } from "@/hooks/use-board"
@@ -63,6 +64,16 @@ export function Overview({ sessions, now }: { sessions: SessionSummary[]; now: n
             </CardContent>
           </Card>
         )}
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Open space</CardTitle>
+            <CardDescription>Toutes les sessions ouvertes, regroupées par machine. Un clic sur un personnage ouvre son détail.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <OpenSpace sessions={open} />
+          </CardContent>
+        </Card>
 
         <Card>
           <CardHeader>

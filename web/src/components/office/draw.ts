@@ -104,7 +104,7 @@ export function draw(canvas: HTMLCanvasElement, sp: Sprites, scene: Scene, tick:
 // Toile de travail réutilisée pour composer un personnage et sa silhouette
 let work: { sprite: HTMLCanvasElement; mask: HTMLCanvasElement } | null = null
 
-function drawActor(ctx: CanvasRenderingContext2D, sp: Sprites, a: Actor, tick: number, outline = false) {
+export function drawActor(ctx: CanvasRenderingContext2D, sp: Sprites, a: Actor, tick: number, outline = false) {
   const frame = frameOf(a, tick)
   const x = Math.round(a.x - 16)
   const y = Math.round(a.y - 30)
@@ -142,7 +142,7 @@ function drawGlow(ctx: CanvasRenderingContext2D, x: number, y: number, activity:
 }
 
 // Voyant sous l'écran (bleu clignotant en frappe, vert en lecture) et feuille posée pendant la lecture
-function drawDeskState(ctx: CanvasRenderingContext2D, ledX: number, ledY: number, paperX: number, paperY: number, activity: Activity | undefined, tick: number) {
+export function drawDeskState(ctx: CanvasRenderingContext2D, ledX: number, ledY: number, paperX: number, paperY: number, activity: Activity | undefined, tick: number) {
   if (!activity || activity === "idle") return
   if (activity === "reading") {
     ctx.fillStyle = "#1c1c24"
@@ -158,7 +158,7 @@ function drawDeskState(ctx: CanvasRenderingContext2D, ledX: number, ledY: number
 }
 
 // Machine à café dessinée en pixels (absente du pack), avec vapeur quand quelqu'un se sert
-function drawCoffeeMachine(ctx: CanvasRenderingContext2D, x: number, y: number, busy: boolean, tick: number) {
+export function drawCoffeeMachine(ctx: CanvasRenderingContext2D, x: number, y: number, busy: boolean, tick: number) {
   ctx.fillStyle = "#1c1c24"
   ctx.fillRect(x - 1, y - 1, 12, 13)
   ctx.fillStyle = "#4a4a58"
@@ -177,7 +177,7 @@ function drawCoffeeMachine(ctx: CanvasRenderingContext2D, x: number, y: number, 
 }
 
 // Image qui change sur l'écran de la grande TV quand quelqu'un la regarde
-function drawTvScreen(ctx: CanvasRenderingContext2D, x: number, y: number, tick: number) {
+export function drawTvScreen(ctx: CanvasRenderingContext2D, x: number, y: number, tick: number) {
   const colors = ["#5ab4ff", "#62d26f", "#f0a020", "#e06aa8"]
   ctx.fillStyle = colors[Math.floor(tick / 6) % colors.length]
   ctx.globalAlpha = 0.55
@@ -188,7 +188,7 @@ function drawTvScreen(ctx: CanvasRenderingContext2D, x: number, y: number, tick:
 const MARK_COLORS: Record<Exclude<Mark, null>, string> = { wait: "#f0a020", done: "#3cb05a", error: "#e0463c", sleep: "#7a86a0" }
 
 // Bulle à droite de la tête, pointe vers la gauche : l'étiquette HTML occupe le dessus
-function drawBubble(ctx: CanvasRenderingContext2D, cx: number, top: number, mark: Exclude<Mark, null>, tick: number) {
+export function drawBubble(ctx: CanvasRenderingContext2D, cx: number, top: number, mark: Exclude<Mark, null>, tick: number) {
   const w = 13
   const h = 10
   const x = Math.round(cx)

@@ -16,7 +16,7 @@ Tableau de bord web des sessions [Claude Code][claude-code] et de leurs sous-age
 
 ## Ce qui est affiché
 
-La page d'accueil (titre « Agents » de la barre du haut) donne une vue d'ensemble de toutes les machines : machines actives, sessions ouvertes, agents en cours, agents terminés aujourd'hui, sessions qui attendent une réponse ou une permission, agents en cours (avec leur dernier outil) et derniers agents terminés. Chaque ligne ouvre la session ou l'agent concerné. En bas, une heatmap montre l'activité des 7 derniers jours, heure par heure (nombre d'appels d'outils et de prompts, toutes machines confondues) ; le détail s'affiche au survol.
+La page d'accueil (titre « Agents » de la barre du haut) donne une vue d'ensemble de toutes les machines : machines actives, sessions ouvertes, agents en cours, agents terminés aujourd'hui, sessions qui attendent une réponse ou une permission, l'« Open space » (toutes les sessions ouvertes en pixel art, voir plus bas), agents en cours (avec leur dernier outil) et derniers agents terminés. Chaque ligne ouvre la session ou l'agent concerné. En bas, une heatmap montre l'activité des 7 derniers jours, heure par heure (nombre d'appels d'outils et de prompts, toutes machines confondues) ; le détail s'affiche au survol.
 
 La liste est organisée par machine (nom envoyé par le hook, voir plus bas), puis par dossier de projet. Machines et dossiers se replient d'un clic (état retenu par navigateur) ; repliés, ils gardent leur nombre de sessions ouvertes et leur état le plus urgent (en attente de toi, en cours, au repos). Le dossier de projet est celui du fil principal de la session ; un agent qui travaille dans un worktree (`<dépôt>/.claude/worktrees/<nom>`) est rattaché au dépôt.
 
@@ -76,6 +76,17 @@ Une vue en pixel art de la session : l'agent principal derrière le comptoir d'a
 - À la fermeture de la session, tout le monde sort par la porte et le bureau s'assombrit. Avec la réduction des animations activée sur le système, personne ne se déplace : chacun reste à son bureau.
 
 Le code est dans `web/src/components/office/` : plan de la pièce et trajets sur une grille de 16 px (`layout.ts`), comportement des personnages (`engine.ts`), dessin trié par profondeur (`draw.ts`), sprites et apparences (`assets.ts`), composant et étiquettes (`index.tsx`).
+
+### Open space
+
+La page d'accueil montre une seule pièce pour toutes les sessions ouvertes, avec la porte et le coin salon du Bureau (partagés par tout le monde).
+
+- Une zone par machine, empilées par ordre alphabétique, avec le nom de la machine au sol et un marquage entre deux zones. Une zone compte des rangées de trois tables ; la pièce s'allonge quand les sessions et sous-agents augmentent.
+- Chaque session a son îlot, délimité par un fond de couleur : l'agent principal, puis ses sous-agents en cours aux tables voisines. Un îlot qui tient dans la rangée en cours la complète, sinon il commence une rangée. Quand un îlot grandit ou rétrécit, les personnes déplacées rejoignent leur nouvelle table à pied.
+- Les agents principaux gardent la veste orange ; peau et coiffure dépendent de la session, sans doublon tant qu'il en reste. Leur étiquette indique la session et le projet (« Session 11 · agents »).
+- Comportement identique au Bureau : entrée et sortie par la porte, pauses dans le coin salon (une activité n'accueille qu'une personne à la fois), bulles, réduction des animations. Un clic sur un agent principal ouvre sa session, un clic sur un sous-agent ouvre son détail.
+
+Le code est dans `web/src/components/openspace/` : plan des zones et îlots (`layout.ts`), dessin (`draw.ts`) et composant (`index.tsx`). Il réutilise le moteur, les sprites et les fonctions de dessin du Bureau.
 
 Les sprites viennent des packs [MetroCity][metrocity] et [MetroCity Interior][metrocity-interior] de JIK-A-4 (aucune licence indiquée sur les pages). `scripts/office-assets.py` les extrait vers `web/public/office/` depuis le dossier des packs téléchargés (`python3 scripts/office-assets.py <dossier MetroCity>`, Pillow requis) : calques des personnages, comptoir sans la croix médicale, écran isolé, table, sol, mur, décor et coin salon (la machine à café est dessinée en code).
 
