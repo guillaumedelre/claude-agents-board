@@ -28,35 +28,57 @@ docker compose up -d --build
 
 L'application est disponible sur l'hôte `agents.${IP}.${DOMAIN}`, en HTTP (la stack n'a pas de HTTPS).
 
-## Branchement des sessions Claude Code
+## Brancher une machine
 
-Ajouter ces hooks dans `~/.claude/settings.json` de chaque machine (niveau utilisateur, pour couvrir tous les dossiers). Si la clé `hooks` existe déjà, ajouter chaque entrée au tableau de l'événement correspondant, sans remplacer les entrées présentes.
+Une machine envoie ses sessions dès que ses hooks Claude Code pointent vers l'application. L'application sert elle-même les scripts d'installation : pas besoin d'accès au dépôt.
 
-```json
-{
-  "hooks": {
-    "SessionStart":       [{ "hooks": [{ "type": "command", "timeout": 5, "command": "curl -s -m 2 -H \"Content-Type: application/json\" -H \"X-Agent-Host: linux\" --data-binary @- http://agents.10.0.0.10.sslip.io/api/hooks" }] }],
-    "SessionEnd":         [{ "hooks": [{ "type": "command", "timeout": 5, "command": "curl -s -m 2 -H \"Content-Type: application/json\" -H \"X-Agent-Host: linux\" --data-binary @- http://agents.10.0.0.10.sslip.io/api/hooks" }] }],
-    "UserPromptSubmit":   [{ "hooks": [{ "type": "command", "timeout": 5, "command": "curl -s -m 2 -H \"Content-Type: application/json\" -H \"X-Agent-Host: linux\" --data-binary @- http://agents.10.0.0.10.sslip.io/api/hooks" }] }],
-    "PreToolUse":         [{ "hooks": [{ "type": "command", "timeout": 5, "command": "curl -s -m 2 -H \"Content-Type: application/json\" -H \"X-Agent-Host: linux\" --data-binary @- http://agents.10.0.0.10.sslip.io/api/hooks" }] }],
-    "PostToolUse":        [{ "hooks": [{ "type": "command", "timeout": 5, "command": "curl -s -m 2 -H \"Content-Type: application/json\" -H \"X-Agent-Host: linux\" --data-binary @- http://agents.10.0.0.10.sslip.io/api/hooks" }] }],
-    "PostToolUseFailure": [{ "hooks": [{ "type": "command", "timeout": 5, "command": "curl -s -m 2 -H \"Content-Type: application/json\" -H \"X-Agent-Host: linux\" --data-binary @- http://agents.10.0.0.10.sslip.io/api/hooks" }] }],
-    "SubagentStart":      [{ "hooks": [{ "type": "command", "timeout": 5, "command": "curl -s -m 2 -H \"Content-Type: application/json\" -H \"X-Agent-Host: linux\" --data-binary @- http://agents.10.0.0.10.sslip.io/api/hooks" }] }],
-    "SubagentStop":       [{ "hooks": [{ "type": "command", "timeout": 5, "command": "curl -s -m 2 -H \"Content-Type: application/json\" -H \"X-Agent-Host: linux\" --data-binary @- http://agents.10.0.0.10.sslip.io/api/hooks" }] }],
-    "Stop":               [{ "hooks": [{ "type": "command", "timeout": 5, "command": "curl -s -m 2 -H \"Content-Type: application/json\" -H \"X-Agent-Host: linux\" --data-binary @- http://agents.10.0.0.10.sslip.io/api/hooks" }] }],
-    "StopFailure":        [{ "hooks": [{ "type": "command", "timeout": 5, "command": "curl -s -m 2 -H \"Content-Type: application/json\" -H \"X-Agent-Host: linux\" --data-binary @- http://agents.10.0.0.10.sslip.io/api/hooks" }] }],
-    "Notification":       [{ "hooks": [{ "type": "command", "timeout": 5, "command": "curl -s -m 2 -H \"Content-Type: application/json\" -H \"X-Agent-Host: linux\" --data-binary @- http://agents.10.0.0.10.sslip.io/api/hooks" }] }]
-  }
-}
+### 1. Prérequis
+
+- Être sur le réseau local, avec un DNS qui résout `agents.10.0.0.10.sslip.io` vers `10.0.0.10`. Certains DNS bloquent les noms publics qui pointent vers une adresse privée (protection anti-rebinding[^rebinding] de Pi-hole ou de certaines box) : tester avec `nslookup agents.10.0.0.10.sslip.io`.
+- Linux et macOS : `curl` et `python3` (pour modifier `settings.json` sans l'écraser).
+- Windows : Windows PowerShell 5.1 ou PowerShell 7. [Git for Windows][git-for-windows] est recommandé (voir plus bas).
+
+### 2. Installer les hooks
+
+Linux, macOS :
+
+```bash
+curl -fsSL http://agents.10.0.0.10.sslip.io/install-hooks.sh | sh -s -- --host <nom>
 ```
 
-- `X-Agent-Host` : nom de la machine affiché dans le tableau, à adapter sur chaque poste. Sans cet en-tête, l'adresse IP de l'appelant est utilisée.
-- Si `HOOK_TOKEN` est défini dans `.env`, ajouter `-H \"X-Hook-Token: <valeur>\"` à chaque commande.
-- Les hooks sont des commandes `curl` et non des hooks `"type": "http"` : Claude Code refuse un hook HTTP vers une adresse privée (`agents.10.0.0.10.sslip.io` résout vers `10.0.0.10`) et n'autorise que le loopback.
-- Les hooks sont synchrones pour que les événements arrivent dans l'ordre. Chaque appel d'outil attend la réponse de l'application (quelques millisecondes sur le réseau local). Si l'application ne répond pas, `curl` abandonne au bout de 2 secondes et Claude Code continue : un hook en échec ne bloque pas l'agent.
-- Sous Windows, `curl.exe` est fourni avec Windows 10 et 11. Ce branchement n'a été testé que sous Linux.
+Windows (PowerShell) :
 
-Les sessions déjà ouvertes au moment de l'ajout des hooks n'apparaissent qu'à leur prochain événement, sans l'historique antérieur.
+```powershell
+& ([scriptblock]::Create((irm http://agents.10.0.0.10.sslip.io/install-hooks.ps1))) -HostName <nom>
+```
+
+`<nom>` est le nom de la machine affiché dans le tableau (lettres, chiffres, `.`, `_`, `-`) ; par défaut, le nom d'hôte. Le script :
+
+- ajoute les hooks dans `~/.claude/settings.json` (ou `$CLAUDE_CONFIG_DIR/settings.json`), au niveau utilisateur pour couvrir tous les dossiers ;
+- garde les hooks déjà présents, ne crée pas de doublon s'il est relancé, et laisse une copie de l'ancien fichier dans `settings.json.bak-agents` ;
+- teste la connexion à l'application et affiche le résultat.
+
+Options : `--url` / `-Url` pour une autre adresse, `--token` / `-Token` si `HOOK_TOKEN` est défini dans le `.env` de la stack, `--uninstall` / `-Uninstall` pour retirer les hooks.
+
+### 3. Relancer les sessions
+
+Une session déjà ouverte n'est pas garantie de prendre en compte les nouveaux hooks : la relancer. Elle apparaît sur le tableau à son premier événement, sans l'historique antérieur.
+
+### Fonctionnement des hooks
+
+- Ce sont des hooks `command` qui envoient le JSON reçu sur l'entrée standard à `POST /api/hooks`, pour 11 événements (`SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `SubagentStart`, `SubagentStop`, `Stop`, `StopFailure`, `Notification`).
+- Ce ne sont pas des hooks `"type": "http"` : Claude Code refuse un hook HTTP vers une adresse privée (`10.0.0.10`) et n'autorise que le loopback.
+- Ils sont synchrones pour que les événements arrivent dans l'ordre : chaque appel d'outil attend la réponse de l'application. Si l'application ne répond pas, l'envoi abandonne au bout de 2 secondes et Claude Code continue : un hook en échec ne bloque pas l'agent.
+- Sous Windows, Claude Code exécute les hooks [avec Git Bash s'il est installé, sinon avec PowerShell][hooks]. Le script détecte Git Bash : avec lui, le hook est une commande `curl.exe` ; sans lui, une commande `Invoke-RestMethod`, plus lente car PowerShell met plusieurs centaines de millisecondes à démarrer, deux fois par appel d'outil. La commande PowerShell a été testée avec PowerShell 7 sous Linux, pas sous Windows.
+
+### Dépannage
+
+| Symptôme | Cause probable |
+|----------|----------------|
+| Le test de connexion échoue (code `000`) | Machine hors du réseau local, ou DNS qui ne résout pas `*.sslip.io` vers une adresse privée |
+| Le test répond « token refusé » | `--token` différent de `HOOK_TOKEN` dans le `.env` de la stack |
+| Le test passe, mais aucune session n'apparaît | Session ouverte avant l'installation (la relancer), `"disableAllHooks": true` dans un fichier de réglages, ou `allowManagedHooksOnly` imposé par une configuration d'organisation |
+| `python3` introuvable (macOS) | Installer les Command Line Tools : `xcode-select --install` |
 
 ## Mise à jour
 
@@ -83,7 +105,10 @@ Pour le serveur en local, depuis ce dossier : `PORT=3000 DATA_DIR=./data node se
 - L'association d'un sous-agent à l'appel qui l'a lancé est provisoire jusqu'au `PostToolUse` de cet appel (le plus ancien appel en attente du même type est retenu au démarrage).
 - Une session fermée sans `SessionEnd` (plantage, terminal tué) reste « en cours », puis passe à « sans nouvelles » après 10 minutes sans événement.
 
+[^rebinding]: Protection DNS qui refuse les réponses pointant vers une adresse privée, pour empêcher un site web d'atteindre le réseau local.
+
 [claude-code]: https://code.claude.com/docs
+[git-for-windows]: https://gitforwindows.org/
 [hooks]: https://code.claude.com/docs/en/hooks
 [traefik]: https://traefik.io/traefik/
 [vite]: https://vite.dev/

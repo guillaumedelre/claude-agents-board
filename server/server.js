@@ -28,6 +28,8 @@ const TYPES = {
   '.woff2': 'font/woff2',
   '.woff': 'font/woff',
   '.ico': 'image/x-icon',
+  '.sh': 'text/plain; charset=utf-8',
+  '.ps1': 'text/plain; charset=utf-8',
 };
 
 const SECURITY_HEADERS = { 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'same-origin' };

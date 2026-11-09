@@ -105,6 +105,7 @@ export default function App() {
 }
 
 function NoSessions({ hasEnded }: { hasEnded: boolean }) {
+  const origin = window.location.origin
   return (
     <Empty className="h-full">
       <EmptyHeader>
@@ -115,14 +116,27 @@ function NoSessions({ hasEnded }: { hasEnded: boolean }) {
         <EmptyDescription>
           {hasEnded
             ? "Les sessions fermées sont masquées."
-            : "Le tableau se remplit dès qu'une session Claude Code envoie ses hooks à /api/hooks."}
+            : "Branche une machine en installant ses hooks, puis relance ses sessions Claude Code."}
         </EmptyDescription>
       </EmptyHeader>
       {!hasEnded && (
-        <EmptyContent>
-          <p className="text-xs text-muted-foreground">La configuration des hooks est dans le README de la stack.</p>
+        <EmptyContent className="max-w-full items-stretch text-left">
+          <InstallCommand label="Linux, macOS" command={`curl -fsSL ${origin}/install-hooks.sh | sh -s -- --host <nom>`} />
+          <InstallCommand
+            label="Windows (PowerShell)"
+            command={`& ([scriptblock]::Create((irm ${origin}/install-hooks.ps1))) -HostName <nom>`}
+          />
         </EmptyContent>
       )}
     </Empty>
+  )
+}
+
+function InstallCommand({ label, command }: { label: string; command: string }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
+      <code className="rounded-md bg-muted px-2.5 py-1.5 font-mono text-[11px] break-all select-all">{command}</code>
+    </div>
   )
 }
