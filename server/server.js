@@ -24,6 +24,8 @@ const IDLE_PROMPT_MESSAGE = 'Claude is waiting for your input';
 const CLEANUP_CHOICES = [0, 3600e3, 86400e3, 7 * 86400e3];
 const MAX_HISTORY = 5000;
 const HISTORY_MS = 30 * 86400e3;
+const ACTIVITY_MS = 8 * 86400e3;
+const HOUR_MS = 3600e3;
 const MAX_TASKS = 200;
 
 const TYPES = {
@@ -150,7 +152,13 @@ function responseText(resp) {
 
 // --- État ---
 
-let state = { sessions: {}, history: [], settings: { autoCleanupMs: 86400e3 }, counters: {} };
+let state = { sessions: {}, history: [], settings: { autoCleanupMs: 86400e3 }, counters: {}, activity: {} };
+
+// Appels d'outils et prompts par heure (clé : début de l'heure en ms), pour la heatmap de l'accueil
+function countActivity(kind, at) {
+  const bucket = (state.activity[Math.floor(at / HOUR_MS) * HOUR_MS] ??= { tools: 0, prompts: 0 });
+  bucket[kind] += 1;
+}
 let version = 0;
 const clients = new Set();
 
@@ -405,6 +413,7 @@ function handle(e, host) {
       s.status = 'running';
       s.attention = null;
       openTurn(s, now);
+      countActivity('prompts', now);
       push(s, { kind: 'prompt', text: clip(e.prompt, TEXT_LIMIT), source: e.source || 'user' });
       break;
     case 'PreToolUse': {
@@ -414,6 +423,7 @@ function handle(e, host) {
       const summary = toolSummary(e.tool_name, e.tool_input);
       thread.lastTool = { tool: e.tool_name, summary, at: now };
       if (!findTool(thread, e.tool_use_id)) {
+        countActivity('tools', now);
         push(thread, {
           kind: 'tool',
           toolUseId: e.tool_use_id,
@@ -442,6 +452,7 @@ function handle(e, host) {
       // Le PreToolUse peut arriver après (agents parallèles) ou manquer (hooks installés en cours de route)
       let ev = findTool(thread, e.tool_use_id);
       if (!ev) {
+        countActivity('tools', now);
         push(thread, {
           kind: 'tool',
           toolUseId: e.tool_use_id,
@@ -546,6 +557,8 @@ function autoCleanup() {
 function prune() {
   const historyCutoff = Date.now() - HISTORY_MS;
   state.history = state.history.filter((h) => h.at >= historyCutoff);
+  const activityCutoff = Date.now() - ACTIVITY_MS;
+  for (const at of Object.keys(state.activity)) if (Number(at) < activityCutoff) delete state.activity[at];
   const cutoff = Date.now() - RETENTION_MS;
   const list = Object.values(state.sessions).sort((a, b) => b.lastSeen - a.lastSeen);
   list.forEach((s, i) => {
@@ -625,6 +638,11 @@ async function api(req, res, pathname) {
   }
 
   if (parts[1] === 'stream' && parts.length === 2 && req.method === 'GET') return stream(req, res);
+
+  if (parts[1] === 'activity' && parts.length === 2 && req.method === 'GET') {
+    const hours = Object.entries(state.activity).map(([at, b]) => ({ at: Number(at), ...b }));
+    return json(res, 200, { now: Date.now(), hours });
+  }
 
   if (parts[1] === 'settings' && parts.length === 2) {
     if (req.method === 'GET') return json(res, 200, state.settings);
@@ -732,10 +750,12 @@ for (const signal of ['SIGTERM', 'SIGINT']) {
 (async () => {
   await fs.mkdir(DATA_DIR, { recursive: true });
   let migrate = false;
+  let backfill = true;
   try {
     const saved = JSON.parse(await fs.readFile(STATE_FILE, 'utf8'));
     if (saved && typeof saved.sessions === 'object') {
       state = { ...state, ...saved };
+      backfill = !saved.activity;
       migrate = !Array.isArray(saved.history);
     }
   } catch (e) {
@@ -752,6 +772,18 @@ for (const signal of ['SIGTERM', 'SIGINT']) {
   }
   // Sessions et agents enregistrés avant la numérotation
   state.counters ??= {};
+  // Activité reconstituée depuis les journaux encore en mémoire, la première fois
+  if (backfill) {
+    state.activity = {};
+    for (const s of Object.values(state.sessions)) {
+      for (const thread of [s, ...Object.values(s.agents)]) {
+        for (const ev of thread.events) {
+          if (ev.kind === 'tool') countActivity('tools', ev.at);
+          else if (ev.kind === 'prompt') countActivity('prompts', ev.at);
+        }
+      }
+    }
+  }
   for (const s of Object.values(state.sessions).sort((a, b) => a.startedAt - b.startedAt)) {
     s.number ??= nextNumber(s.host, s.cwd);
     s.name ??= null;

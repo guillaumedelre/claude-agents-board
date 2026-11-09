@@ -12,11 +12,11 @@ Tableau de bord web des sessions [Claude Code][claude-code] et de leurs sous-age
   - `DELETE /api/sessions` : retire les sessions fermées et celles sans nouvelles depuis 10 minutes
   - `GET /api/settings`, `PUT /api/settings` : `{ "autoCleanupMs": 86400000 }` (délai du nettoyage automatique : `0`, 1 h, 24 h ou 7 jours)
   - `GET /api/stream` : flux [SSE][sse] qui signale chaque changement (l'interface recharge alors les données)
-- Stockage : volume nommé `agents_data` (`/data/state.json`), écrit au plus une fois par seconde : sessions, réglages et historique des durées. Les sessions sans activité depuis `RETENTION_DAYS` jours (7 par défaut) sont supprimées, avec 300 sessions au maximum et 500 événements par fil. L'historique des durées (agents et tâches terminés) est gardé à part, 30 jours et 5 000 entrées au maximum.
+- Stockage : volume nommé `agents_data` (`/data/state.json`), écrit au plus une fois par seconde : sessions, réglages et historique des durées. Les sessions sans activité depuis `RETENTION_DAYS` jours (7 par défaut) sont supprimées, avec 300 sessions au maximum et 500 événements par fil. L'historique des durées (agents et tâches terminés) est gardé à part, 30 jours et 5 000 entrées au maximum. Les compteurs d'activité par heure (heatmap de l'accueil) sont gardés 8 jours, indépendamment des sessions retirées.
 
 ## Ce qui est affiché
 
-La page d'accueil (titre « Agents » de la barre du haut) donne une vue d'ensemble de toutes les machines : machines actives, sessions ouvertes, agents en cours, agents terminés aujourd'hui, sessions qui attendent une réponse ou une permission, agents en cours (avec leur dernier outil) et derniers agents terminés. Chaque ligne ouvre la session ou l'agent concerné.
+La page d'accueil (titre « Agents » de la barre du haut) donne une vue d'ensemble de toutes les machines : machines actives, sessions ouvertes, agents en cours, agents terminés aujourd'hui, sessions qui attendent une réponse ou une permission, agents en cours (avec leur dernier outil) et derniers agents terminés. Chaque ligne ouvre la session ou l'agent concerné. En bas, une heatmap montre l'activité des 7 derniers jours, heure par heure (nombre d'appels d'outils et de prompts, toutes machines confondues) ; le détail s'affiche au survol.
 
 La liste est organisée par machine (nom envoyé par le hook, voir plus bas), puis par dossier de projet. Machines et dossiers se replient d'un clic (état retenu par navigateur) ; repliés, ils gardent leur nombre de sessions ouvertes et leur état le plus urgent (en attente de toi, en cours, au repos). Le dossier de projet est celui du fil principal de la session ; un agent qui travaille dans un worktree (`<dépôt>/.claude/worktrees/<nom>`) est rattaché au dépôt.
 

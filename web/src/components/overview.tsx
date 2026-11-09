@@ -1,4 +1,5 @@
 import { BellRing, CheckCircle2, FolderGit2, Loader2, Monitor, type LucideIcon } from "lucide-react"
+import { ActivityHeatmap } from "@/components/activity-heatmap"
 import { StatusDot, ToolIcon } from "@/components/status"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { go } from "@/hooks/use-board"
@@ -89,6 +90,8 @@ export function Overview({ sessions, now }: { sessions: SessionSummary[]; now: n
             )}
           </CardContent>
         </Card>
+
+        <ActivityHeatmap now={now} />
       </div>
     </div>
   )
