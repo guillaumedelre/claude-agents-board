@@ -20,6 +20,7 @@ const PENDING_TTL = 10 * 60e3;
 const MAX_TURNS = 200;
 // Même seuil que l'interface : une session « en cours » muette depuis 10 min est considérée comme morte
 const STALE_MS = 10 * 60e3;
+const IDLE_PROMPT_MESSAGE = 'Claude is waiting for your input';
 const CLEANUP_CHOICES = [0, 3600e3, 86400e3, 7 * 86400e3];
 const MAX_HISTORY = 5000;
 const HISTORY_MS = 30 * 86400e3;
@@ -502,8 +503,9 @@ function handle(e, host) {
       push(thread, { kind: 'error', text: clip(e.error_details || format(e.error) || 'Erreur', DETAIL_LIMIT) });
       break;
     case 'Notification':
-      s.attention = clip(e.message, 300) || 'En attente';
-      push(s, { kind: 'notice', text: s.attention });
+      // idle_prompt arrive 60 s après tout tour terminé : la session est au repos, pas bloquée
+      if (e.notification_type !== 'idle_prompt') s.attention = clip(e.message, 300) || 'En attente';
+      push(s, { kind: 'notice', text: clip(e.message, 300) || 'Notification' });
       break;
     case 'SessionEnd':
       s.status = 'ended';
@@ -741,6 +743,8 @@ for (const signal of ['SIGTERM', 'SIGINT']) {
   }
   state.settings = { autoCleanupMs: 86400e3, ...state.settings };
   for (const s of Object.values(state.sessions)) s.cwd = projectRoot(s.cwd);
+  // Attentes enregistrées avant qu'idle_prompt soit ignoré
+  for (const s of Object.values(state.sessions)) if (s.attention === IDLE_PROMPT_MESSAGE) s.attention = null;
   for (const s of Object.values(state.sessions)) {
     for (const a of Object.values(s.agents)) {
       if (!a.type && !a.toolUseId && !a.events.length && a.status === 'done' && a.endedAt === a.startedAt) delete s.agents[a.id];

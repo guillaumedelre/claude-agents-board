@@ -26,7 +26,7 @@ Noms affichés :
 - Dans l'arbre d'une session : « Agent principal » (le fil principal et son dernier outil), puis ses sous-agents.
 - Sous-agent : « #N », son numéro d'ordre dans la session, son type et le nom de sa tâche (la description passée à l'outil `Agent`). Un agent lancé avant l'installation des hooks n'a pas de tâche connue : « Tâche inconnue · <début de son identifiant> ».
 
-- Par session : dossier de projet, machine, modèle, mode de permission, état (en cours, au repos, en attente de toi, fermée, sans nouvelles depuis 10 minutes), prompts, appels d'outils (entrée et sortie, tronquées à 4 000 caractères), réponse finale de chaque tour.
+- Par session : dossier de projet, machine, modèle, mode de permission, état (en cours, au repos, en attente de toi, fermée, sans nouvelles depuis 10 minutes ; « en attente de toi » vient d'une `Notification` de Claude Code, comme une demande de permission, sauf `idle_prompt` : envoyée 60 secondes après tout tour terminé, elle n'est notée que dans le journal), prompts, appels d'outils (entrée et sortie, tronquées à 4 000 caractères), réponse finale de chaque tour.
 - Par agent : type, description, consigne complète, arborescence parent / sous-agents, dernier outil utilisé, chronologie de ses outils, rapport final, tokens et durée (agents au premier plan uniquement).
 
 Les hooks ne transmettent pas les messages intermédiaires du modèle, seulement le dernier message de chaque tour (`Stop`, `SubagentStop`).
