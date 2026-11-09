@@ -5,6 +5,7 @@ import { Detail } from "@/components/detail"
 import { Logo } from "@/components/logo"
 import { Overview } from "@/components/overview"
 import { SessionList } from "@/components/session-list"
+import { ThemeMenu } from "@/components/theme-menu"
 import { Badge } from "@/components/ui/badge"
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -83,6 +84,7 @@ export default function App() {
             </label>
           )}
           {board && <CleanupMenu closedCount={endedCount} autoCleanupMs={autoCleanupMs} />}
+          <ThemeMenu />
           <span
             className={cn("flex items-center gap-1.5 text-xs", online ? "text-done" : "text-destructive")}
             title={online ? "Flux temps réel connecté" : "Flux temps réel coupé, reconnexion…"}

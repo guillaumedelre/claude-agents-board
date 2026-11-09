@@ -33,6 +33,8 @@ Les hooks ne transmettent pas les messages intermédiaires du modèle, seulement
 
 Le détail d'une session ou d'un agent a deux vues : « Journal » (la chronologie ci-dessus) et « Timeline ». Le bouton ✕ ou la touche Échap ferment le détail ; retirer une session du tableau passe par le menu « Nettoyage ».
 
+Le bouton de thème de la barre du haut choisit entre clair, sombre et automatique (suit le système, par défaut). Le choix est retenu par navigateur.
+
 ### Sessions fermées et nettoyage
 
 Une session est fermée quand elle a envoyé `SessionEnd`, ou quand elle est « en cours » sans événement depuis 10 minutes (plantage, terminal tué). Une session fermée est masquée par défaut (interrupteur « Fermées »). Affichée, elle a une carte en pointillés, un titre barré, l'heure de fermeture et, si le nettoyage automatique est actif, le temps avant son retrait.
