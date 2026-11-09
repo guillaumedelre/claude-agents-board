@@ -1,15 +1,13 @@
 import { useEffect, useState } from "react"
-import { Activity, BellRing, Bot, Loader2, Monitor, Radio, Unplug } from "lucide-react"
-import { CleanupMenu } from "@/components/cleanup-menu"
+import { BellRing, Bot, Loader2 } from "lucide-react"
 import { Detail } from "@/components/detail"
 import { Logo } from "@/components/logo"
 import { Overview } from "@/components/overview"
 import { SessionList } from "@/components/session-list"
-import { ThemeMenu } from "@/components/theme-menu"
+import { StatusBar } from "@/components/status-bar"
 import { Badge } from "@/components/ui/badge"
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Switch } from "@/components/ui/switch"
 import { go, useBoard, useHashRoute, useNow, useSession } from "@/hooks/use-board"
 import { agentDisplay, isClosed, sessionDisplay } from "@/lib/status"
 import { cn } from "@/lib/utils"
@@ -47,6 +45,7 @@ export default function App() {
   const hosts = new Set(live.map((s) => s.host))
   const endedCount = (board?.sessions.length ?? 0) - live.length
   const autoCleanupMs = board?.settings?.autoCleanupMs ?? 0
+  const lastEvent = board?.sessions.length ? Math.max(...board.sessions.map((s) => s.lastSeen)) : null
 
   return (
     <div className="flex h-dvh flex-col">
@@ -60,39 +59,11 @@ export default function App() {
           <Logo className="size-5 text-[#d97757]" />
           Agents
         </button>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <Badge variant="outline">
-            <Monitor /> {hosts.size} machine{hosts.size > 1 ? "s" : ""}
+        {waiting > 0 && (
+          <Badge variant="outline" className="border-attention/50 text-attention">
+            <BellRing /> {waiting} en attente
           </Badge>
-          <Badge variant="outline">
-            <Activity /> {live.length} session{live.length > 1 ? "s" : ""}
-          </Badge>
-          <Badge variant="outline" className={cn(runningAgents > 0 && "border-running/40 text-running")}>
-            <Loader2 className={cn(runningAgents > 0 && "animate-spin")} /> {runningAgents} agent{runningAgents > 1 ? "s" : ""} en cours
-          </Badge>
-          {waiting > 0 && (
-            <Badge variant="outline" className="border-attention/50 text-attention">
-              <BellRing /> {waiting} en attente
-            </Badge>
-          )}
-        </div>
-        <div className="ml-auto flex items-center gap-3">
-          {endedCount > 0 && (
-            <label className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Switch checked={showEnded} onCheckedChange={setShowEnded} size="sm" />
-              Fermées ({endedCount})
-            </label>
-          )}
-          {board && <CleanupMenu closedCount={endedCount} autoCleanupMs={autoCleanupMs} />}
-          <ThemeMenu />
-          <span
-            className={cn("flex items-center gap-1.5 text-xs", online ? "text-done" : "text-destructive")}
-            title={online ? "Flux temps réel connecté" : "Flux temps réel coupé, reconnexion…"}
-          >
-            {online ? <Radio className="size-3.5" /> : <Unplug className="size-3.5" />}
-            <span className="hidden sm:inline">{online ? "En direct" : "Hors ligne"}</span>
-          </span>
-        </div>
+        )}
       </header>
 
       <main className="flex min-h-0 flex-1">
@@ -117,6 +88,20 @@ export default function App() {
           )}
         </section>
       </main>
+
+      <StatusBar
+        online={online}
+        hosts={hosts.size}
+        sessions={live.length}
+        runningAgents={runningAgents}
+        lastEvent={lastEvent}
+        now={now}
+        endedCount={endedCount}
+        showEnded={showEnded}
+        onShowEnded={setShowEnded}
+        autoCleanupMs={autoCleanupMs}
+        ready={!!board}
+      />
     </div>
   )
 }

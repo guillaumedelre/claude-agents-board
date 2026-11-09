@@ -23,10 +23,10 @@ import {
 } from "@/components/ui/dropdown-menu"
 
 const CHOICES = [
-  { ms: 0, label: "Désactivé" },
-  { ms: 3600e3, label: "Après 1 h d'inactivité" },
-  { ms: 86400e3, label: "Après 24 h d'inactivité" },
-  { ms: 7 * 86400e3, label: "Après 7 jours d'inactivité" },
+  { ms: 0, label: "Désactivé", short: "manuel" },
+  { ms: 3600e3, label: "Après 1 h d'inactivité", short: "auto 1 h" },
+  { ms: 86400e3, label: "Après 24 h d'inactivité", short: "auto 24 h" },
+  { ms: 7 * 86400e3, label: "Après 7 jours d'inactivité", short: "auto 7 j" },
 ]
 
 export function CleanupMenu({ closedCount, autoCleanupMs }: { closedCount: number; autoCleanupMs: number }) {
@@ -45,13 +45,12 @@ export function CleanupMenu({ closedCount, autoCleanupMs }: { closedCount: numbe
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm">
+          <Button variant="ghost" size="xs" className="text-xs font-normal text-inherit" title="Nettoyage des sessions">
             <Eraser />
-            <span className="hidden sm:inline">Nettoyage</span>
-            {autoCleanupMs > 0 && <span className="size-1.5 rounded-full bg-done" aria-label="Nettoyage automatique actif" />}
+            <span className="hidden sm:inline">{CHOICES.find((c) => c.ms === autoCleanupMs)?.short ?? "auto"}</span>
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-72">
+        <DropdownMenuContent align="end" side="top" className="w-72">
           <DropdownMenuItem disabled={closedCount === 0} onSelect={() => setConfirm(true)}>
             <Eraser />
             Retirer les sessions fermées ({closedCount})

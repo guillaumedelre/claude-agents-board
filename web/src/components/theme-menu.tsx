@@ -52,12 +52,12 @@ export function ThemeMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="icon-sm" title="Thème">
+        <Button variant="ghost" size="icon-xs" className="text-inherit" title="Thème">
           <Current />
           <span className="sr-only">Thème</span>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
+      <DropdownMenuContent align="end" side="top">
         <DropdownMenuRadioGroup value={theme} onValueChange={(v) => setTheme(v as Theme)}>
           {CHOICES.map(({ value, label, icon: Icon }) => (
             <DropdownMenuRadioItem key={value} value={value}>

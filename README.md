@@ -33,13 +33,16 @@ Les hooks ne transmettent pas les messages intermédiaires du modèle, seulement
 
 Le détail d'une session ou d'un agent a deux vues : « Journal » (la chronologie ci-dessus) et « Timeline ». Le bouton ✕ ou la touche Échap ferment le détail ; retirer une session du tableau passe par le menu « Nettoyage ».
 
-Le bouton de thème de la barre du haut choisit entre clair, sombre et automatique (suit le système, par défaut). Le choix est retenu par navigateur.
+La barre du haut ne garde que le titre (retour à l'accueil) et le nombre de sessions en attente de toi. La barre de statut en bas affiche :
+
+- à gauche : l'état du flux temps réel (« En direct », ou « Hors ligne » sur fond rouge), les machines actives, les sessions ouvertes, les agents en cours et l'heure du dernier événement reçu d'un hook ;
+- à droite : l'interrupteur « Fermées (N) », le menu « Nettoyage » (son libellé indique le mode : « manuel » ou « auto 1 h / 24 h / 7 j ») et le thème (clair, sombre ou automatique, qui suit le système et est le choix par défaut, retenu par navigateur).
 
 ### Sessions fermées et nettoyage
 
 Une session est fermée quand elle a envoyé `SessionEnd`, ou quand elle est « en cours » sans événement depuis 10 minutes (plantage, terminal tué). Une session fermée est masquée par défaut (interrupteur « Fermées »). Affichée, elle a une carte en pointillés, un titre barré, l'heure de fermeture et, si le nettoyage automatique est actif, le temps avant son retrait.
 
-Le menu « Nettoyage » propose :
+Le menu « Nettoyage » de la barre de statut propose :
 
 - « Retirer les sessions fermées » : retrait immédiat, après confirmation ;
 - le nettoyage automatique (24 h par défaut, ou 1 h, 7 jours, désactivé) : le serveur vérifie chaque minute et retire toute session sans événement depuis ce délai, fermée ou non. Une session retirée revient au prochain événement qu'elle envoie.
