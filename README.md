@@ -29,7 +29,7 @@ Noms affichés :
 
 Les hooks ne transmettent pas les messages intermédiaires du modèle, seulement le dernier message de chaque tour (`Stop`, `SubagentStop`).
 
-Le détail d'une session ou d'un agent a deux vues : « Journal » (la chronologie ci-dessus) et « Timeline ».
+Le détail d'une session ou d'un agent a deux vues : « Journal » (la chronologie ci-dessus) et « Timeline ». Le bouton ✕ ou la touche Échap ferment le détail ; retirer une session du tableau passe par le menu « Nettoyage ».
 
 ### Sessions fermées et nettoyage
 

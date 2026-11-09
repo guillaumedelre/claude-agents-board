@@ -1,20 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
-import { ArrowLeft, Bot, Check, Pencil, X, CheckCircle2, Copy, FolderGit2, Monitor, ScrollText, Trash2 } from "lucide-react"
+import { ArrowLeft, Bot, Check, Pencil, X, CheckCircle2, Copy, FolderGit2, Monitor, ScrollText } from "lucide-react"
 import { Gantt } from "@/components/gantt"
 import { AgentTree } from "@/components/session-list"
 import { StatusBadge } from "@/components/status"
 import { Bubble, Timeline } from "@/components/timeline"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
@@ -66,6 +55,17 @@ export function Detail({ session: s, agentId, now }: { session: SessionDetail; a
       /* préférence non retenue */
     }
   }
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      // Échap appartient d'abord au champ de saisie, au menu ou à la boîte de dialogue ouverts
+      if (e.key !== "Escape" || e.defaultPrevented) return
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      if (document.querySelector('[role="alertdialog"], [role="menu"]')) return
+      go(null)
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [])
   const agent = agentId ? s.agents[agentId] : undefined
   const events = agent ? (agent.events ?? []) : s.events
   const scrollRef = useStickToBottom(`${view}/${s.id}/${agentId}/${events.length}/${events.at(-1)?.pending}`)
@@ -97,7 +97,14 @@ export function Detail({ session: s, agentId, now }: { session: SessionDetail; a
             <SessionName session={s} />
           )}
           <StatusBadge status={agent ? agentDisplay(agent, now) : sessionDisplay(s, now)} />
-          {!agent && <DeleteSession id={s.id} />}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" aria-label="Fermer le panneau" onClick={() => go(null)}>
+                <X />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Fermer (Échap)</TooltipContent>
+          </Tooltip>
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
           {agent ? (
@@ -219,37 +226,6 @@ function CopyId({ label, value, copyText }: { label: string; value: string; copy
       </TooltipTrigger>
       <TooltipContent>{copyText ? `Copier « ${copyText} »` : `Copier ${label}`}</TooltipContent>
     </Tooltip>
-  )
-}
-
-function DeleteSession({ id }: { id: string }) {
-  const remove = async () => {
-    await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
-      method: "DELETE",
-    })
-    go(null)
-  }
-  return (
-    <AlertDialog>
-      <AlertDialogTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label="Retirer la session">
-          <Trash2 />
-        </Button>
-      </AlertDialogTrigger>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Retirer cette session du tableau ?</AlertDialogTitle>
-          <AlertDialogDescription>
-            Son historique et ses agents disparaissent du tableau. La session Claude Code elle-même n'est pas touchée, et réapparaîtra au
-            prochain événement qu'elle envoie.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Annuler</AlertDialogCancel>
-          <AlertDialogAction onClick={remove}>Retirer</AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
   )
 }
 
