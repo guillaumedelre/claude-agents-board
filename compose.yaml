@@ -21,7 +21,7 @@ services:
         labels:
             homepage.group: IA
             homepage.name: Agents
-            homepage.icon: https://cdn.jsdelivr.net/gh/selfhst/icons/webp/claude.webp
+            homepage.icon: http://${COMPOSE_PROJECT_NAME}.${IP}.${DOMAIN}/favicon.svg
             homepage.href: http://${COMPOSE_PROJECT_NAME}.${IP}.${DOMAIN}
 
             traefik.enable: true

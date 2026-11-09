@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { Activity, BellRing, Bot, Loader2, Monitor, Radio, Unplug } from "lucide-react"
 import { CleanupMenu } from "@/components/cleanup-menu"
 import { Detail } from "@/components/detail"
+import { Logo } from "@/components/logo"
 import { Overview } from "@/components/overview"
 import { SessionList } from "@/components/session-list"
 import { Badge } from "@/components/ui/badge"
@@ -55,7 +56,7 @@ export default function App() {
           className="flex items-center gap-2 rounded-md font-semibold outline-none hover:opacity-80 focus-visible:ring-[3px] focus-visible:ring-ring/50"
           title="Retour à l'accueil"
         >
-          <Bot className="size-5" />
+          <Logo className="size-5 text-[#d97757]" />
           Agents
         </button>
         <div className="flex flex-wrap items-center gap-1.5">
