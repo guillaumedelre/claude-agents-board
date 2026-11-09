@@ -1,0 +1,39 @@
+services:
+    agents:
+        build:
+            context: .
+        image: agents
+        container_name: agents
+        restart: unless-stopped
+        environment:
+            HOOK_TOKEN: ${HOOK_TOKEN:-}
+            RETENTION_DAYS: ${RETENTION_DAYS:-7}
+        volumes:
+            - agents_data:/data
+        networks:
+            - traefik
+        healthcheck:
+            test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health || exit 1"]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+            start_period: 10s
+        labels:
+            homepage.group: IA
+            homepage.name: Agents
+            homepage.description: Agents Claude Code en cours
+            homepage.icon: https://cdn.jsdelivr.net/npm/@mdi/svg/svg/robot-outline.svg
+            homepage.href: http://${COMPOSE_PROJECT_NAME}.${IP}.${DOMAIN}
+
+            traefik.enable: true
+            traefik.docker.network: traefik
+            traefik.http.routers.agents.entrypoints: web
+            traefik.http.routers.agents.rule: Host(`${COMPOSE_PROJECT_NAME}.${IP}.${DOMAIN}`)
+            traefik.http.services.agents.loadbalancer.server.port: 3000
+
+volumes:
+    agents_data:
+
+networks:
+    traefik:
+        external: true
