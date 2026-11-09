@@ -387,6 +387,8 @@ function handle(e, host) {
   }
   const now = Date.now();
   const s = getSession(e, host, now);
+  // Agents internes de Claude Code (résumés de progression) : seulement un SubagentStop, sans type ni activité
+  if (e.hook_event_name === 'SubagentStop' && e.agent_id && !s.agents[e.agent_id] && !e.agent_type) return true;
   const sub = e.agent_id ? getAgent(s, e.agent_id, e.agent_type, now) : null;
   const thread = sub || s;
 
@@ -662,11 +664,6 @@ async function api(req, res, pathname) {
       changed(s.id);
       return json(res, 200, { name: s.name });
     }
-    if (req.method === 'DELETE') {
-      delete state.sessions[s.id];
-      changed(s.id);
-      return json(res, 200, { ok: true });
-    }
     return json(res, 405, { error: 'method not allowed' });
   }
 
@@ -744,6 +741,11 @@ for (const signal of ['SIGTERM', 'SIGINT']) {
   }
   state.settings = { autoCleanupMs: 86400e3, ...state.settings };
   for (const s of Object.values(state.sessions)) s.cwd = projectRoot(s.cwd);
+  for (const s of Object.values(state.sessions)) {
+    for (const a of Object.values(s.agents)) {
+      if (!a.type && !a.toolUseId && !a.events.length && a.status === 'done' && a.endedAt === a.startedAt) delete s.agents[a.id];
+    }
+  }
   // Sessions et agents enregistrés avant la numérotation
   state.counters ??= {};
   for (const s of Object.values(state.sessions).sort((a, b) => a.startedAt - b.startedAt)) {

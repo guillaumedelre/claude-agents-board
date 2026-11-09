@@ -2,12 +2,13 @@ import { useEffect, useState } from "react"
 import { Activity, BellRing, Bot, Loader2, Monitor, Radio, Unplug } from "lucide-react"
 import { CleanupMenu } from "@/components/cleanup-menu"
 import { Detail } from "@/components/detail"
+import { Overview } from "@/components/overview"
 import { SessionList } from "@/components/session-list"
 import { Badge } from "@/components/ui/badge"
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Switch } from "@/components/ui/switch"
-import { useBoard, useHashRoute, useNow, useSession } from "@/hooks/use-board"
+import { go, useBoard, useHashRoute, useNow, useSession } from "@/hooks/use-board"
 import { agentDisplay, isClosed, sessionDisplay } from "@/lib/status"
 import { cn } from "@/lib/utils"
 
@@ -48,10 +49,15 @@ export default function App() {
   return (
     <div className="flex h-dvh flex-col">
       <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-2.5">
-        <div className="flex items-center gap-2 font-semibold">
+        <button
+          type="button"
+          onClick={() => go(null)}
+          className="flex items-center gap-2 rounded-md font-semibold outline-none hover:opacity-80 focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          title="Retour à l'accueil"
+        >
           <Bot className="size-5" />
           Agents
-        </div>
+        </button>
         <div className="flex flex-wrap items-center gap-1.5">
           <Badge variant="outline">
             <Monitor /> {hosts.size} machine{hosts.size > 1 ? "s" : ""}
@@ -97,11 +103,13 @@ export default function App() {
           )}
         </aside>
         <section className={cn("min-h-0 min-w-0 flex-1", !sessionId && "hidden md:block")}>
-          {detail ? (
+          {!sessionId ? (
+            board && <Overview sessions={board.sessions} now={now} />
+          ) : detail ? (
             <Detail session={detail} agentId={agentId} now={now} />
           ) : (
             <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">
-              {missing ? "Cette session n'est plus sur le tableau." : sessionId ? <Loader2 className="animate-spin" /> : "Choisis une session ou un agent."}
+              {missing ? "Cette session n'est plus sur le tableau." : <Loader2 className="animate-spin" />}
             </div>
           )}
         </section>

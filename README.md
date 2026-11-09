@@ -9,12 +9,14 @@ Tableau de bord web des sessions [Claude Code][claude-code] et de leurs sous-age
   - `GET /api/sessions` : résumé de toutes les sessions (sans les chronologies)
   - `GET /api/sessions/:id` : session complète, avec la chronologie de chaque agent, les tours de conversation, les tâches et les estimations de durée
   - `PATCH /api/sessions/:id` : `{ "name": "..." }` renomme une session (80 caractères au maximum ; vide pour revenir au nom automatique)
-  - `DELETE /api/sessions/:id` : retire une session du tableau ; `DELETE /api/sessions` retire les sessions fermées et celles sans nouvelles depuis 10 minutes
+  - `DELETE /api/sessions` : retire les sessions fermées et celles sans nouvelles depuis 10 minutes
   - `GET /api/settings`, `PUT /api/settings` : `{ "autoCleanupMs": 86400000 }` (délai du nettoyage automatique : `0`, 1 h, 24 h ou 7 jours)
   - `GET /api/stream` : flux [SSE][sse] qui signale chaque changement (l'interface recharge alors les données)
 - Stockage : volume nommé `agents_data` (`/data/state.json`), écrit au plus une fois par seconde : sessions, réglages et historique des durées. Les sessions sans activité depuis `RETENTION_DAYS` jours (7 par défaut) sont supprimées, avec 300 sessions au maximum et 500 événements par fil. L'historique des durées (agents et tâches terminés) est gardé à part, 30 jours et 5 000 entrées au maximum.
 
 ## Ce qui est affiché
+
+La page d'accueil (titre « Agents » de la barre du haut) donne une vue d'ensemble de toutes les machines : machines actives, sessions ouvertes, agents en cours, agents terminés aujourd'hui, sessions qui attendent une réponse ou une permission, agents en cours (avec leur dernier outil) et derniers agents terminés. Chaque ligne ouvre la session ou l'agent concerné.
 
 La liste est organisée par machine (nom envoyé par le hook, voir plus bas), puis par dossier de projet. Machines et dossiers se replient d'un clic (état retenu par navigateur) ; repliés, ils gardent leur nombre de sessions ouvertes et leur état le plus urgent (en attente de toi, en cours, au repos). Le dossier de projet est celui du fil principal de la session ; un agent qui travaille dans un worktree (`<dépôt>/.claude/worktrees/<nom>`) est rattaché au dépôt.
 
@@ -137,6 +139,7 @@ Pour le serveur en local, depuis ce dossier : `PORT=3000 DATA_DIR=./data node se
 - Pas d'authentification sur l'interface : les prompts, les commandes et le contenu des fichiers lus par les agents sont lisibles par tout appareil du réseau local. Sans `HOOK_TOKEN`, n'importe quel appareil du réseau peut aussi envoyer de faux événements.
 - Les agents lancés par un workflow n'ont pas d'appel Agent : leur consigne et leur description sont inconnues.
 - L'association d'un sous-agent à l'appel qui l'a lancé est provisoire jusqu'au `PostToolUse` de cet appel (le plus ancien appel en attente du même type est retenu au démarrage).
+- Claude Code lance des agents internes (par exemple les résumés périodiques de la progression d'un agent en arrière-plan) qui n'envoient qu'un `SubagentStop`, sans type : ils sont ignorés.
 - Une session restée « au repos » quand son terminal est fermé sans `SessionEnd` n'est pas reconnue comme fermée : seul le nettoyage automatique la retire.
 - Une machine branchée avant l'ajout des événements `TaskCreated` / `TaskCompleted` voit ses tâches via les outils `TaskCreate` / `TaskUpdate` ; relancer le script d'installation ajoute ces deux événements.
 - Une session fermée sans `SessionEnd` (plantage, terminal tué) reste « en cours », puis passe à « sans nouvelles » après 10 minutes sans événement.
