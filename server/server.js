@@ -18,6 +18,11 @@ const TEXT_LIMIT = 20000;
 const DETAIL_LIMIT = 4000;
 const PENDING_TTL = 10 * 60e3;
 const MAX_TURNS = 200;
+// Même seuil que l'interface : une session « en cours » muette depuis 10 min est considérée comme morte
+const STALE_MS = 10 * 60e3;
+const CLEANUP_CHOICES = [0, 3600e3, 86400e3, 7 * 86400e3];
+const MAX_HISTORY = 5000;
+const HISTORY_MS = 30 * 86400e3;
 const MAX_TASKS = 200;
 
 const TYPES = {
@@ -144,7 +149,7 @@ function responseText(resp) {
 
 // --- État ---
 
-let state = { sessions: {} };
+let state = { sessions: {}, history: [], settings: { autoCleanupMs: 86400e3 } };
 let version = 0;
 const clients = new Set();
 
@@ -242,12 +247,16 @@ function upsertTask(s, id, fields, now) {
   return t;
 }
 
-function setTaskStatus(t, status, now) {
+function setTaskStatus(s, t, status, now) {
   if (status === 'in_progress') {
     t.startedAt ??= now;
     t.completedAt = null;
   } else if (status === 'completed') {
     t.completedAt ??= now;
+    if (t.startedAt && !t.recorded) {
+      t.recorded = true;
+      recordDuration(s, 'task', 'task', t.completedAt - t.startedAt);
+    }
   } else if (status === 'pending') {
     t.startedAt = null;
     t.completedAt = null;
@@ -261,7 +270,7 @@ function trackTaskTool(s, e, now) {
     const id = String(i.taskId);
     if (i.status === 'deleted') return void delete s.tasks[id];
     const t = upsertTask(s, id, { subject: clip(i.subject, 200), description: clip(i.description, 2000), activeForm: clip(i.activeForm, 200) }, now);
-    if (i.status) setTaskStatus(t, i.status, now);
+    if (i.status) setTaskStatus(s, t, i.status, now);
   } else if (e.tool_name === 'TodoWrite' && Array.isArray(i.todos)) {
     // TodoWrite renvoie la liste complète : une tâche absente a été retirée
     const seen = new Set();
@@ -270,10 +279,23 @@ function trackTaskTool(s, e, now) {
       const id = `todo:${todo.content.slice(0, 200)}`;
       seen.add(id);
       const t = upsertTask(s, id, { subject: clip(todo.content, 200), activeForm: clip(todo.activeForm, 200), owner: e.agent_id }, now);
-      if (todo.status && todo.status !== t.status) setTaskStatus(t, todo.status, now);
+      if (todo.status && todo.status !== t.status) setTaskStatus(s, t, todo.status, now);
     }
     for (const id of Object.keys(s.tasks)) if (id.startsWith('todo:') && !seen.has(id)) delete s.tasks[id];
   }
+}
+
+// Les durées survivent au nettoyage des sessions : les estimations en dépendent
+function recordDuration(s, kind, type, d) {
+  if (!(d > 0)) return;
+  state.history.push({ cwd: s.cwd, kind, type, d, at: Date.now() });
+  if (state.history.length > MAX_HISTORY) state.history.splice(0, state.history.length - MAX_HISTORY);
+}
+
+function recordAgent(s, a, now) {
+  if (a.recorded) return;
+  a.recorded = true;
+  recordDuration(s, 'agent', a.type || 'agent', a.durationMs ?? (a.endedAt ?? now) - a.startedAt);
 }
 
 const median = (xs) => {
@@ -284,27 +306,21 @@ const median = (xs) => {
 
 // Durée médiane des agents terminés, par type : ceux du même projet d'abord, tous les projets sinon
 function estimatesFor(cwd) {
-  const local = { agents: {}, tasks: [] };
-  const all = { agents: {}, tasks: [] };
-  for (const s of Object.values(state.sessions)) {
-    const scopes = s.cwd === cwd ? [local, all] : [all];
-    for (const a of Object.values(s.agents)) {
-      if (a.status !== 'done' || !a.endedAt) continue;
-      const d = a.durationMs ?? a.endedAt - a.startedAt;
-      for (const sc of scopes) (sc.agents[a.type || 'agent'] ??= []).push(d);
-    }
-    for (const t of Object.values(s.tasks ?? {})) {
-      if (t.completedAt && t.startedAt) for (const sc of scopes) sc.tasks.push(t.completedAt - t.startedAt);
-    }
+  const local = { agent: {}, task: {} };
+  const all = { agent: {}, task: {} };
+  const cutoff = Date.now() - HISTORY_MS;
+  for (const h of state.history) {
+    if (h.at < cutoff) continue;
+    for (const sc of h.cwd === cwd ? [local, all] : [all]) (sc[h.kind][h.type] ??= []).push(h.d);
   }
   const pick = (l = [], g = []) =>
     l.length >= 3 ? { median: median(l), n: l.length, scope: 'project' } : g.length >= 3 ? { median: median(g), n: g.length, scope: 'all' } : null;
   const agents = {};
-  for (const type of Object.keys(all.agents)) {
-    const est = pick(local.agents[type], all.agents[type]);
+  for (const type of Object.keys(all.agent)) {
+    const est = pick(local.agent[type], all.agent[type]);
     if (est) agents[type] = est;
   }
-  return { agents, tasks: pick(local.tasks, all.tasks) };
+  return { agents, tasks: pick(local.task.task, all.task.task) };
 }
 
 const SPAWN_KEYS = ['toolUseId', 'type', 'description', 'prompt', 'parentId'];
@@ -335,6 +351,7 @@ function linkSpawn(s, toolUseId, resp, now) {
     a.endedAt ??= now;
     if (resp.totalTokens != null) a.tokens = resp.totalTokens;
     if (resp.totalDurationMs != null) a.durationMs = resp.totalDurationMs;
+    recordAgent(s, a, now);
     if (!a.result) a.result = clip(responseText(resp.content), TEXT_LIMIT);
   }
 }
@@ -437,6 +454,7 @@ function handle(e, host) {
       sub.status = 'done';
       sub.endedAt = now;
       if (e.last_assistant_message) sub.result = clip(e.last_assistant_message, TEXT_LIMIT);
+      recordAgent(s, sub, now);
       break;
     case 'TaskCreated':
       if (e.task_id == null) break;
@@ -444,7 +462,7 @@ function handle(e, host) {
       break;
     case 'TaskCompleted':
       if (e.task_id == null) break;
-      setTaskStatus(upsertTask(s, String(e.task_id), { subject: clip(e.task_subject, 200) }, now), 'completed', now);
+      setTaskStatus(s, upsertTask(s, String(e.task_id), { subject: clip(e.task_subject, 200) }, now), 'completed', now);
       break;
     case 'Stop':
       if (sub) break;
@@ -482,7 +500,25 @@ function handle(e, host) {
 let saveTimer = null;
 let saving = Promise.resolve();
 
+const isClosed = (s, now) => s.status === 'ended' || (s.status === 'running' && now - s.lastSeen > STALE_MS);
+
+function autoCleanup() {
+  const delay = state.settings.autoCleanupMs;
+  if (!delay) return;
+  const now = Date.now();
+  let removed = 0;
+  for (const s of Object.values(state.sessions)) {
+    if (now - s.lastSeen > delay) {
+      delete state.sessions[s.id];
+      removed += 1;
+    }
+  }
+  if (removed) changed(null);
+}
+
 function prune() {
+  const historyCutoff = Date.now() - HISTORY_MS;
+  state.history = state.history.filter((h) => h.at >= historyCutoff);
   const cutoff = Date.now() - RETENTION_MS;
   const list = Object.values(state.sessions).sort((a, b) => b.lastSeen - a.lastSeen);
   list.forEach((s, i) => {
@@ -560,17 +596,35 @@ async function api(req, res, pathname) {
 
   if (parts[1] === 'stream' && parts.length === 2 && req.method === 'GET') return stream(req, res);
 
+  if (parts[1] === 'settings' && parts.length === 2) {
+    if (req.method === 'GET') return json(res, 200, state.settings);
+    if (req.method !== 'PUT') return json(res, 405, { error: 'method not allowed' });
+    const body = JSON.parse(await readBody(req));
+    if (!CLEANUP_CHOICES.includes(body?.autoCleanupMs)) return json(res, 400, { error: `autoCleanupMs must be one of ${CLEANUP_CHOICES}` });
+    state.settings.autoCleanupMs = body.autoCleanupMs;
+    changed(null);
+    autoCleanup();
+    return json(res, 200, state.settings);
+  }
+
   if (parts[1] === 'sessions') {
     if (parts.length === 2 && req.method === 'GET') {
       const sessions = Object.values(state.sessions)
         .sort((a, b) => b.lastSeen - a.lastSeen)
         .map(summaryOf);
-      return json(res, 200, { version, now: Date.now(), sessions });
+      return json(res, 200, { version, now: Date.now(), settings: state.settings, sessions });
     }
     if (parts.length === 2 && req.method === 'DELETE') {
-      for (const s of Object.values(state.sessions)) if (s.status === 'ended') delete state.sessions[s.id];
+      const now = Date.now();
+      let removed = 0;
+      for (const s of Object.values(state.sessions)) {
+        if (isClosed(s, now)) {
+          delete state.sessions[s.id];
+          removed += 1;
+        }
+      }
       changed(null);
-      return json(res, 200, { ok: true });
+      return json(res, 200, { removed });
     }
     const s = parts.length === 3 ? state.sessions[parts[2]] : null;
     if (!s) return json(res, 404, { error: 'not found' });
@@ -645,11 +699,25 @@ for (const signal of ['SIGTERM', 'SIGINT']) {
 
 (async () => {
   await fs.mkdir(DATA_DIR, { recursive: true });
+  let migrate = false;
   try {
     const saved = JSON.parse(await fs.readFile(STATE_FILE, 'utf8'));
-    if (saved && typeof saved.sessions === 'object') state = saved;
+    if (saved && typeof saved.sessions === 'object') {
+      state = { ...state, ...saved };
+      migrate = !Array.isArray(saved.history);
+    }
   } catch (e) {
     if (e.code !== 'ENOENT') console.error(`load: ${e.message}`);
   }
+  state.settings = { autoCleanupMs: 86400e3, ...state.settings };
+  // État écrit avant l'historique des durées : on le reconstruit à partir des sessions conservées
+  if (migrate) {
+    for (const s of Object.values(state.sessions)) {
+      for (const a of Object.values(s.agents)) if (a.status === 'done') recordAgent(s, a, a.endedAt ?? s.lastSeen);
+      for (const t of Object.values(s.tasks ?? {})) if (t.completedAt) setTaskStatus(s, t, 'completed', t.completedAt);
+    }
+  }
+  setInterval(autoCleanup, 60e3).unref();
+  autoCleanup();
   server.listen(PORT, () => console.log(`agents listening on :${PORT}`));
 })();

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
-import { Activity, BellRing, Bot, Loader2, Radio, Unplug } from "lucide-react"
+import { Activity, BellRing, Bot, Loader2, Monitor, Radio, Unplug } from "lucide-react"
+import { CleanupMenu } from "@/components/cleanup-menu"
 import { Detail } from "@/components/detail"
 import { SessionList } from "@/components/session-list"
 import { Badge } from "@/components/ui/badge"
@@ -7,7 +8,7 @@ import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTi
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Switch } from "@/components/ui/switch"
 import { useBoard, useHashRoute, useNow, useSession } from "@/hooks/use-board"
-import { agentDisplay, sessionDisplay } from "@/lib/status"
+import { agentDisplay, isClosed, sessionDisplay } from "@/lib/status"
 import { cn } from "@/lib/utils"
 
 const SHOW_ENDED_KEY = "agents.showEnded"
@@ -36,12 +37,13 @@ export default function App() {
     }
   }, [showEnded])
 
-  const sessions = (board?.sessions ?? []).filter((s) => showEnded || s.status !== "ended" || s.id === sessionId)
-  const live = board?.sessions.filter((s) => s.status !== "ended") ?? []
+  const sessions = (board?.sessions ?? []).filter((s) => showEnded || !isClosed(s, now) || s.id === sessionId)
+  const live = board?.sessions.filter((s) => !isClosed(s, now)) ?? []
   const runningAgents = live.flatMap((s) => s.agents).filter((a) => agentDisplay(a, now) === "running").length
   const waiting = live.filter((s) => sessionDisplay(s, now) === "attention").length
-  const hosts = new Set(board?.sessions.map((s) => s.host))
+  const hosts = new Set(live.map((s) => s.host))
   const endedCount = (board?.sessions.length ?? 0) - live.length
+  const autoCleanupMs = board?.settings?.autoCleanupMs ?? 0
 
   return (
     <div className="flex h-dvh flex-col">
@@ -51,6 +53,9 @@ export default function App() {
           Agents
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
+          <Badge variant="outline">
+            <Monitor /> {hosts.size} machine{hosts.size > 1 ? "s" : ""}
+          </Badge>
           <Badge variant="outline">
             <Activity /> {live.length} session{live.length > 1 ? "s" : ""}
           </Badge>
@@ -63,13 +68,14 @@ export default function App() {
             </Badge>
           )}
         </div>
-        <div className="ml-auto flex items-center gap-4">
+        <div className="ml-auto flex items-center gap-3">
           {endedCount > 0 && (
             <label className="flex items-center gap-2 text-xs text-muted-foreground">
               <Switch checked={showEnded} onCheckedChange={setShowEnded} size="sm" />
               Fermées ({endedCount})
             </label>
           )}
+          {board && <CleanupMenu closedCount={endedCount} autoCleanupMs={autoCleanupMs} />}
           <span
             className={cn("flex items-center gap-1.5 text-xs", online ? "text-done" : "text-destructive")}
             title={online ? "Flux temps réel connecté" : "Flux temps réel coupé, reconnexion…"}
@@ -84,7 +90,7 @@ export default function App() {
         <aside className={cn("min-h-0 w-full border-r md:block md:w-[400px] md:shrink-0", sessionId && "hidden")}>
           {board && sessions.length > 0 ? (
             <ScrollArea className="h-full">
-              <SessionList sessions={sessions} selection={{ sessionId, agentId }} now={now} showHost={hosts.size > 1} />
+              <SessionList sessions={sessions} selection={{ sessionId, agentId }} now={now} autoCleanupMs={autoCleanupMs} />
             </ScrollArea>
           ) : (
             board && <NoSessions hasEnded={endedCount > 0} />

@@ -26,3 +26,7 @@ export const LABELS: Record<Display, string> = {
   stale: "Sans nouvelles",
   stopped: "Interrompu",
 }
+
+// Fermée proprement (SessionEnd) ou muette alors qu'elle travaillait : même règle que le nettoyage du serveur
+export const isClosed = (s: { status: SessionStatus; lastSeen: number }, now: number) =>
+  s.status === "ended" || (s.status === "running" && now - s.lastSeen > STALE_MS)

@@ -87,4 +87,6 @@ export type SessionDetail = SessionBase & {
   estimates: { agents: Record<string, Estimate>; tasks: Estimate | null }
 }
 
-export type Board = { version: number; now: number; sessions: SessionSummary[] }
+export type Settings = { autoCleanupMs: number }
+
+export type Board = { version: number; now: number; settings: Settings; sessions: SessionSummary[] }

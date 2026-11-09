@@ -1,6 +1,6 @@
 # Agents
 
-Tableau de bord web des sessions [Claude Code][claude-code] et de leurs sous-agents, auto-hébergé derrière [Traefik][traefik]. Chaque session, sur n'importe quelle machine du réseau local, envoie ses [hooks][hooks] à l'application, qui les regroupe par machine et par dossier de projet et les affiche en temps réel.
+Tableau de bord web des sessions [Claude Code][claude-code] et de leurs sous-agents, auto-hébergé derrière [Traefik][traefik]. Chaque session, sur n'importe quelle machine du réseau local, envoie ses [hooks][hooks] à l'application, qui les affiche en temps réel, regroupées par machine puis par dossier de projet.
 
 - `web/` : interface React avec [Vite][vite], [Tailwind CSS][tailwind] v4 et [shadcn/ui][shadcn]. Compilée dans l'image Docker.
 - `server/server.js` : serveur Node sans dépendance. Il sert l'interface et une API JSON :
@@ -8,11 +8,14 @@ Tableau de bord web des sessions [Claude Code][claude-code] et de leurs sous-age
   - `POST /api/hooks` : reçoit le JSON d'un hook Claude Code tel quel (en-têtes optionnels `X-Agent-Host`, `X-Hook-Token`)
   - `GET /api/sessions` : résumé de toutes les sessions (sans les chronologies)
   - `GET /api/sessions/:id` : session complète, avec la chronologie de chaque agent, les tours de conversation, les tâches et les estimations de durée
-  - `DELETE /api/sessions/:id` : retire une session du tableau ; `DELETE /api/sessions` retire toutes les sessions fermées
+  - `DELETE /api/sessions/:id` : retire une session du tableau ; `DELETE /api/sessions` retire les sessions fermées et celles sans nouvelles depuis 10 minutes
+  - `GET /api/settings`, `PUT /api/settings` : `{ "autoCleanupMs": 86400000 }` (délai du nettoyage automatique : `0`, 1 h, 24 h ou 7 jours)
   - `GET /api/stream` : flux [SSE][sse] qui signale chaque changement (l'interface recharge alors les données)
-- Stockage : volume nommé `agents_data` (`/data/state.json`), écrit au plus une fois par seconde. Les sessions sans activité depuis `RETENTION_DAYS` jours (7 par défaut) sont supprimées, avec 300 sessions au maximum et 500 événements par fil.
+- Stockage : volume nommé `agents_data` (`/data/state.json`), écrit au plus une fois par seconde : sessions, réglages et historique des durées. Les sessions sans activité depuis `RETENTION_DAYS` jours (7 par défaut) sont supprimées, avec 300 sessions au maximum et 500 événements par fil. L'historique des durées (agents et tâches terminés) est gardé à part, 30 jours et 5 000 entrées au maximum.
 
 ## Ce qui est affiché
+
+La liste est organisée par machine (nom envoyé par le hook, voir plus bas), puis par dossier de projet. Chaque machine indique son nombre de sessions ouvertes et son état le plus urgent (en attente de toi, en cours, au repos).
 
 - Par session : dossier de projet, machine, modèle, mode de permission, état (en cours, au repos, en attente de toi, fermée, sans nouvelles depuis 10 minutes), prompts, appels d'outils (entrée et sortie, tronquées à 4 000 caractères), réponse finale de chaque tour.
 - Par agent : type, description, consigne complète, arborescence parent / sous-agents, dernier outil utilisé, chronologie de ses outils, rapport final, tokens et durée (agents au premier plan uniquement).
@@ -20,6 +23,17 @@ Tableau de bord web des sessions [Claude Code][claude-code] et de leurs sous-age
 Les hooks ne transmettent pas les messages intermédiaires du modèle, seulement le dernier message de chaque tour (`Stop`, `SubagentStop`).
 
 Le détail d'une session ou d'un agent a deux vues : « Journal » (la chronologie ci-dessus) et « Timeline ».
+
+### Sessions fermées et nettoyage
+
+Une session est fermée quand elle a envoyé `SessionEnd`, ou quand elle est « en cours » sans événement depuis 10 minutes (plantage, terminal tué). Une session fermée est masquée par défaut (interrupteur « Fermées »). Affichée, elle a une carte en pointillés, un titre barré, l'heure de fermeture et, si le nettoyage automatique est actif, le temps avant son retrait.
+
+Le menu « Nettoyage » propose :
+
+- « Retirer les sessions fermées » : retrait immédiat, après confirmation ;
+- le nettoyage automatique (24 h par défaut, ou 1 h, 7 jours, désactivé) : le serveur vérifie chaque minute et retire toute session sans événement depuis ce délai, fermée ou non. Une session retirée revient au prochain événement qu'elle envoie.
+
+Le nettoyage n'efface pas l'historique des durées qui sert aux estimations de la timeline.
 
 ### Timeline
 
@@ -116,7 +130,7 @@ Pour le serveur en local, depuis ce dossier : `PORT=3000 DATA_DIR=./data node se
 - Pas d'authentification sur l'interface : les prompts, les commandes et le contenu des fichiers lus par les agents sont lisibles par tout appareil du réseau local. Sans `HOOK_TOKEN`, n'importe quel appareil du réseau peut aussi envoyer de faux événements.
 - Les agents lancés par un workflow n'ont pas d'appel Agent : leur consigne et leur description sont inconnues.
 - L'association d'un sous-agent à l'appel qui l'a lancé est provisoire jusqu'au `PostToolUse` de cet appel (le plus ancien appel en attente du même type est retenu au démarrage).
-- Les estimations ne portent que sur l'historique conservé (`RETENTION_DAYS`) : retirer une session du tableau retire aussi ses durées de l'historique.
+- Une session restée « au repos » quand son terminal est fermé sans `SessionEnd` n'est pas reconnue comme fermée : seul le nettoyage automatique la retire.
 - Une machine branchée avant l'ajout des événements `TaskCreated` / `TaskCompleted` voit ses tâches via les outils `TaskCreate` / `TaskUpdate` ; relancer le script d'installation ajoute ces deux événements.
 - Une session fermée sans `SessionEnd` (plantage, terminal tué) reste « en cours », puis passe à « sans nouvelles » après 10 minutes sans événement.
 
