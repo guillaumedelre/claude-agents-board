@@ -20,9 +20,19 @@ const FRAME_MS = 150
 const BUBBLE_MS = 2500
 const READ_TOOLS = new Set(["Read", "Grep", "Glob", "WebFetch", "WebSearch", "ToolSearch", "NotebookRead", "LS"])
 
-// Tenue orange réservée à l'agent principal ; la tenue 2 du pack est presque vide
+// Veste orange et coiffure 0 réservées à l'agent principal ; la tenue 2 du pack est presque vide
 const MAIN_LOOK = { skin: 0, outfit: 3, hair: 0 }
-const SUB_OUTFITS = [0, 1, 4, 5]
+const LOOKS: Look[] = [
+  { skin: 1, outfit: 4, hair: 3 },
+  { skin: 3, outfit: 1, hair: 1 },
+  { skin: 4, outfit: 5, hair: 6 },
+  { skin: 0, outfit: 0, hair: 2 },
+  { skin: 5, outfit: 4, hair: 7 },
+  { skin: 2, outfit: 5, hair: 4 },
+  { skin: 4, outfit: 1, hair: 5 },
+  { skin: 1, outfit: 0, hair: 6 },
+]
+const FIXED_LOOKS: Record<string, number> = { Explore: 0, "general-purpose": 1, Plan: 2 }
 
 const SPRITES = ["body", "outfits", "hairs", "counter", "monitor", "table", "bookshelf", "plant", "door", "painting", "wall", "floor"] as const
 type Sprites = Record<(typeof SPRITES)[number], HTMLImageElement>
@@ -38,10 +48,20 @@ function hash(text: string) {
   return h >>> 0
 }
 
-// Un type d'agent garde toujours la même apparence
-function lookFor(type: string | null): Look {
-  const h = hash(type ?? "agent")
-  return { skin: h % 6, outfit: SUB_OUTFITS[(h >>> 3) % SUB_OUTFITS.length], hair: (h >>> 6) % 8 }
+// Un type garde la même apparence ; deux types d'une même session ne partagent pas un look tant qu'il en reste
+function looksByType(agents: Agent[]) {
+  const looks = new Map<string, Look>()
+  const used = new Set<number>()
+  for (const a of [...agents].sort((x, y) => x.startedAt - y.startedAt)) {
+    const type = a.type ?? "agent"
+    if (looks.has(type)) continue
+    const free = LOOKS.length - Object.keys(FIXED_LOOKS).length
+    let i = FIXED_LOOKS[type] ?? LOOKS.length - free + (hash(type) % free)
+    for (let n = 0; n < LOOKS.length && used.has(i); n++) i = (i + 1) % LOOKS.length
+    used.add(i)
+    looks.set(type, LOOKS[i])
+  }
+  return looks
 }
 
 const activityOf = (tool: LastTool | null | undefined, working: boolean): Activity =>
@@ -131,6 +151,7 @@ export function Office({ session: s, agentId, now }: { session: SessionDetail; a
     [s.agents, Math.floor(now / 1000)],
   )
   const seats = useSeats(present)
+  const looks = useMemo(() => looksByType(Object.values(s.agents)), [s.agents])
   const deskCount = Math.max(COLS, Math.ceil((Math.max(-1, ...seats.values()) + 1) / COLS) * COLS)
   const height = FIRST_ROW_Y + (deskCount / COLS) * ROW_H - 18
   const zoom = Math.max(1, Math.min(3, Math.floor(width / W)))
@@ -145,7 +166,7 @@ export function Office({ session: s, agentId, now }: { session: SessionDetail; a
       x: COUNTER.x + 45,
       y: COUNTER.y - 22,
       look: MAIN_LOOK,
-      activity: activityOf(s.lastTool, s.status === "running" && display !== "stale"),
+      activity: activityOf(s.lastTool, display === "running"),
       mark: mainMark,
     })
   }
@@ -159,7 +180,7 @@ export function Office({ session: s, agentId, now }: { session: SessionDetail; a
       seat,
       x: d.x + 7,
       y: d.y - 28,
-      look: lookFor(a.type),
+      look: looks.get(a.type ?? "agent") ?? LOOKS[0],
       activity: activityOf(a.lastTool, shown === "running"),
       mark: shown === "done" ? "done" : shown === "stopped" ? "error" : shown === "stale" ? "sleep" : null,
     })
@@ -210,7 +231,7 @@ export function Office({ session: s, agentId, now }: { session: SessionDetail; a
               agent={p.id ? byId.get(p.id) : undefined}
               session={s}
               zoom={zoom}
-              selected={p.id === agentId}
+              selected={p.id !== null && p.id === agentId}
               now={now}
             />
           ))}
@@ -316,7 +337,10 @@ function draw(canvas: HTMLCanvasElement, sp: Sprites, scene: Scene, tick: number
   const main = people.find((p) => p.id === null)
   if (main) drawPerson(ctx, sp, main, tick)
   ctx.drawImage(sp.counter, COUNTER.x, COUNTER.y)
-  if (main) drawLed(ctx, COUNTER.x + 61, COUNTER.y + 17, main.activity)
+  if (main) {
+    drawLed(ctx, COUNTER.x + 61, COUNTER.y + 17, main.activity, tick)
+    if (main.activity === "reading") drawPaper(ctx, COUNTER.x + 78, COUNTER.y + 12)
+  }
 
   const bySeat = new Map(people.filter((p) => p.seat !== null).map((p) => [p.seat, p]))
   for (let seat = 0; seat < deskCount; seat++) {
@@ -325,10 +349,13 @@ function draw(canvas: HTMLCanvasElement, sp: Sprites, scene: Scene, tick: number
     if (p) drawPerson(ctx, sp, p, tick)
     ctx.drawImage(sp.table, d.x, d.y)
     ctx.drawImage(sp.monitor, d.x + 12, d.y - 4)
-    if (p) drawLed(ctx, d.x + 22, d.y + 9, p.activity)
+    if (p) {
+      drawLed(ctx, d.x + 22, d.y + 9, p.activity, tick)
+      if (p.activity === "reading") drawPaper(ctx, d.x + 36, d.y + 4)
+    }
   }
 
-  for (const p of people) if (p.mark) drawBubble(ctx, p.x + 16, p.y + 2, p.mark, tick)
+  for (const p of people) if (p.mark) drawBubble(ctx, p.x + 31, p.y + 4, p.mark, tick)
 
   if (closed) {
     ctx.fillStyle = "rgba(10, 10, 20, 0.45)"
@@ -336,9 +363,16 @@ function draw(canvas: HTMLCanvasElement, sp: Sprites, scene: Scene, tick: number
   }
 }
 
-// Frappe : les 6 images de marche vers le bas, jambes cachées par le meuble ; lecture : balancement lent
+// Frappe : images 1 et 4 de la marche (un bras puis l'autre en avant), sans enchaîner le cycle complet qui ressemble à une course.
+// Lecture : regard tourné vers la feuille posée à droite (image 6, profil droit) une partie du temps.
+function frameOf(activity: Activity, tick: number) {
+  if (activity === "typing") return Math.floor(tick / 2) % 2 ? 4 : 1
+  if (activity === "reading") return tick % 20 < 9 ? 6 : 0
+  return 0
+}
+
 function drawPerson(ctx: CanvasRenderingContext2D, sp: Sprites, p: Person, tick: number) {
-  const frame = p.activity === "typing" ? tick % 6 : p.activity === "reading" ? (Math.floor(tick / 4) % 2) * 3 : 0
+  const frame = frameOf(p.activity, tick)
   for (const [sheet, row] of [
     [sp.body, p.look.skin],
     [sp.outfits, p.look.outfit],
@@ -348,11 +382,21 @@ function drawPerson(ctx: CanvasRenderingContext2D, sp: Sprites, p: Person, tick:
   }
 }
 
-// Voyant sous l'écran : bleu en frappe, vert en lecture, éteint au repos
-function drawLed(ctx: CanvasRenderingContext2D, x: number, y: number, activity: Activity) {
-  if (activity === "idle") return
+// Voyant sous l'écran : bleu clignotant en frappe, vert fixe en lecture, éteint au repos
+function drawLed(ctx: CanvasRenderingContext2D, x: number, y: number, activity: Activity, tick: number) {
+  if (activity === "idle" || (activity === "typing" && tick % 4 === 3)) return
   ctx.fillStyle = activity === "typing" ? "#5ab4ff" : "#62d26f"
-  ctx.fillRect(x, y, 2, 1)
+  ctx.fillRect(x - 1, y, 4, 2)
+}
+
+// Feuille posée à droite de l'écran pendant la lecture
+function drawPaper(ctx: CanvasRenderingContext2D, x: number, y: number) {
+  ctx.fillStyle = "#1c1c24"
+  ctx.fillRect(x - 1, y - 1, 9, 8)
+  ctx.fillStyle = "#f4f1e8"
+  ctx.fillRect(x, y, 7, 6)
+  ctx.fillStyle = "#9a958a"
+  for (const dy of [1, 3, 5]) ctx.fillRect(x + 1, y + dy, dy === 5 ? 3 : 5, 1)
 }
 
 const MARK_COLORS: Record<Exclude<Mark, null>, string> = { wait: "#f0a020", done: "#3cb05a", error: "#e0463c", sleep: "#7a86a0" }
@@ -360,15 +404,16 @@ const MARK_COLORS: Record<Exclude<Mark, null>, string> = { wait: "#f0a020", done
 function drawBubble(ctx: CanvasRenderingContext2D, cx: number, top: number, mark: Exclude<Mark, null>, tick: number) {
   const w = 13
   const h = 10
+  // Bulle à droite de la tête, pointe vers la gauche : l'étiquette HTML occupe le dessus
   const x = Math.round(cx - w / 2)
-  const y = top - h - 4
+  const y = top
   ctx.fillStyle = "#1c1c24"
   ctx.fillRect(x - 1, y - 1, w + 2, h + 2)
-  ctx.fillRect(cx - 2, y + h + 1, 4, 1)
-  ctx.fillRect(cx - 1, y + h + 2, 2, 1)
+  ctx.fillRect(x - 3, y + 6, 2, 2)
+  ctx.fillRect(x - 4, y + 8, 1, 1)
   ctx.fillStyle = "#ffffff"
   ctx.fillRect(x, y, w, h)
-  ctx.fillRect(cx - 1, y + h, 2, 1)
+  ctx.fillRect(x - 2, y + 6, 2, 1)
   ctx.fillStyle = MARK_COLORS[mark]
   if (mark === "wait") {
     const lit = tick % 6 < 3 ? 3 : 2

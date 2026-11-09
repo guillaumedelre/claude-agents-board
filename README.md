@@ -65,9 +65,9 @@ Pour un agent ou une tâche en cours, la fin estimée apparaît en pointillés, 
 Une vue en pixel art de la session : l'agent principal derrière le comptoir d'accueil (veste orange), chaque sous-agent en cours à sa propre table.
 
 - Un sous-agent reçoit une table à son démarrage (la première libre) et la libère en partant ; une rangée de trois tables s'ajoute quand toutes sont prises.
-- Un type d'agent a toujours la même apparence (couleur de peau, tenue, coiffure tirées de son type).
-- Animation selon le dernier outil : lecture (`Read`, `Grep`, `Glob`, `WebFetch`, `WebSearch`, `ToolSearch`) avec un balancement lent et un voyant vert sous l'écran, frappe pour tous les autres outils avec un voyant bleu, immobile au repos.
-- Bulles : « … » ambre quand la session attend une permission, coche verte pendant 2,5 secondes en fin de tour ou à la fin d'un sous-agent, « ! » rouge pour un sous-agent interrompu ou une session en erreur, « z » pour une session ou un agent sans nouvelles depuis 10 minutes.
+- Un type d'agent a toujours la même apparence : `Explore`, `general-purpose` et `Plan` ont un look fixe, les autres types en reçoivent un parmi huit, sans doublon dans une même session tant qu'il en reste. La veste orange est réservée à l'agent principal.
+- Animation selon le dernier outil : lecture (`Read`, `Grep`, `Glob`, `WebFetch`, `WebSearch`, `ToolSearch`) avec une feuille posée sur le bureau, que l'agent regarde régulièrement en tournant la tête, et un voyant vert sous l'écran ; frappe pour tous les autres outils (bras en alternance, voyant bleu clignotant) ; immobile au repos ou en attente de permission.
+- Bulles, à droite de la tête : « … » ambre quand la session attend une permission, coche verte pendant 2,5 secondes en fin de tour ou à la fin d'un sous-agent, « ! » rouge pour un sous-agent interrompu ou une session en erreur, « z » pour une session ou un agent sans nouvelles depuis 10 minutes.
 - Au-dessus de chaque personnage : son nom (« Agent principal », « #3 Explore ») et l'outil en cours. Le survol affiche la tâche, l'état, l'outil et la durée ; un clic ouvre le détail de l'agent.
 - Une session fermée affiche le bureau vide et assombri. Avec la réduction des animations activée sur le système, les personnages restent immobiles.
 
