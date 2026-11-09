@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { go } from "@/hooks/use-board"
 import { agentLabel, duration } from "@/lib/format"
@@ -8,6 +7,7 @@ import type { Agent, LastTool, SessionDetail } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { LOOKS, MAIN_LOOK, looksByType, useSprites } from "./assets"
 import { draw } from "./draw"
+import { LabelModeToggle, useLabelMode } from "./labels"
 import { type Activity, type Actor, Engine, type Mark, type Wish } from "./engine"
 import { COLS, Grid, MAIN_HOME, W, sceneHeight, seatHome } from "./layout"
 
@@ -18,17 +18,6 @@ const READ_TOOLS = new Set(["Read", "Grep", "Glob", "WebFetch", "WebSearch", "To
 
 const activityOf = (tool: LastTool | null | undefined, working: boolean): Activity =>
   !working ? "idle" : tool && READ_TOOLS.has(tool.tool) ? "reading" : "typing"
-
-const LABELS_KEY = "agents.officeLabels"
-type LabelMode = "always" | "hover"
-
-function readLabelMode(): LabelMode {
-  try {
-    return localStorage.getItem(LABELS_KEY) === "hover" ? "hover" : "always"
-  } catch {
-    return "always"
-  }
-}
 
 const reducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches
 
@@ -103,17 +92,10 @@ export function Office({ session: s, agentId, now }: { session: SessionDetail; a
   const deskCount = Math.max(COLS, Math.ceil((Math.max(-1, ...seats.values()) + 1) / COLS) * COLS)
   const height = sceneHeight(deskCount)
   const zoom = Math.max(1, Math.min(3, Math.floor(width / W)))
-  const [labelMode, setLabelMode] = useState(readLabelMode)
+  const { mode: labelMode, pick: pickLabelMode } = useLabelMode()
   const [hover, setHover] = useState<string | null>(null)
-  const pickLabelMode = (v: string) => {
-    if (v !== "always" && v !== "hover") return
-    setLabelMode(v)
-    try {
-      localStorage.setItem(LABELS_KEY, v)
-    } catch {
-      /* préférence non retenue */
-    }
-  }
+  // Sous-agents déjà repartis : la sidebar les liste encore, le bureau non
+  const finished = agents.filter((a) => a.status !== "running" && !present.includes(a)).length
   // Permission demandée par un sous-agent présent : la bulle va sur lui, sinon sur l'agent principal
   const waiting = display === "attention" && s.attentionAgent && present.some((a) => a.id === s.attentionAgent) ? s.attentionAgent : "main"
 
@@ -232,6 +214,14 @@ export function Office({ session: s, agentId, now }: { session: SessionDetail; a
             aria-hidden="true"
           />
           {!sprites && <p className="absolute inset-0 grid place-items-center text-sm text-muted-foreground">Chargement du bureau…</p>}
+          {finished > 0 && (
+            <span
+              className="pointer-events-none absolute rounded bg-background/85 px-1.5 text-[10px] leading-4 text-muted-foreground shadow-sm"
+              style={{ left: 6 * zoom, top: 66 * zoom }}
+            >
+              {finished} sous-agent{finished > 1 ? "s" : ""} terminé{finished > 1 ? "s" : ""}
+            </span>
+          )}
           {closed && actors.length === 0 && (
             <p className="absolute inset-x-0 top-1/3 text-center text-sm font-medium text-white drop-shadow">Session fermée, le bureau est vide</p>
           )}
@@ -253,17 +243,7 @@ export function Office({ session: s, agentId, now }: { session: SessionDetail; a
         </div>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
-        <span className="flex items-center gap-2">
-          Étiquettes :
-          <ToggleGroup type="single" variant="outline" size="sm" value={labelMode} onValueChange={pickLabelMode}>
-            <ToggleGroupItem value="always" className="h-6 text-[11px]">
-              toujours
-            </ToggleGroupItem>
-            <ToggleGroupItem value="hover" className="h-6 text-[11px]">
-              au survol
-            </ToggleGroupItem>
-          </ToggleGroup>
-        </span>
+        <LabelModeToggle mode={labelMode} onChange={pickLabelMode} />
         <span>
           Sprites :{" "}
           <a className="underline underline-offset-2" href="https://jik-a-4.itch.io/metrocity" target="_blank" rel="noreferrer">

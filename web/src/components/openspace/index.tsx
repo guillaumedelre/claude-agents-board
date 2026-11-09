@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { type Look, LOOKS, MAIN_LOOK, looksByType, useSprites } from "@/components/office/assets"
 import { type Activity, type Actor, Engine, type Mark, type Wish } from "@/components/office/engine"
+import { LabelModeToggle, useLabelMode } from "@/components/office/labels"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { go, useNow } from "@/hooks/use-board"
 import { agentLabel, basename, duration, sessionLabel } from "@/lib/format"
 import { LABELS, agentDisplay, sessionDisplay } from "@/lib/status"
 import type { Agent, LastTool, SessionSummary } from "@/lib/types"
+import { cn } from "@/lib/utils"
 import { drawOpenSpace } from "./draw"
 import { type Plan, type Pod, W, openGrid, planOf } from "./layout"
 
@@ -138,8 +140,11 @@ export function OpenSpace({ sessions }: { sessions: SessionSummary[] }) {
   // Le moteur du Bureau vit hors de React ; la boucle de dessin lit toujours la dernière scène
   const engine = useRef<Engine | null>(null)
   engine.current ??= new Engine(openGrid(plan.height, plan.desks), reducedMotion())
-  const scene = useRef<{ plan: Plan; zoom: number }>({ plan, zoom })
-  scene.current = { plan, zoom }
+  const { mode: labelMode, pick: pickLabelMode } = useLabelMode()
+  const [hover, setHover] = useState<string | null>(null)
+  const outlined = hover ? [hover] : []
+  const scene = useRef<{ plan: Plan; zoom: number; outlined: string[] }>({ plan, zoom, outlined })
+  scene.current = { plan, zoom, outlined }
   const wishKey = JSON.stringify(wishes)
   const gridKey = JSON.stringify([plan.height, plan.desks])
   useEffect(() => {
@@ -215,6 +220,7 @@ export function OpenSpace({ sessions }: { sessions: SessionSummary[] }) {
   for (const [id, w] of who) known.current.set(id, w)
   const actors = cast ? [...(engine.current?.actors.values() ?? [])] : []
   for (const id of [...known.current.keys()]) if (!who.has(id) && !engine.current?.actors.has(id)) known.current.delete(id)
+  const alert = new Set(wishes.filter((w) => w.mark === "wait" || w.mark === "error").map((w) => w.id))
   const bind = (id: string) => (el: HTMLElement | null) => {
     const list = (overlays.current.get(id) ?? []).filter((x) => x.isConnected)
     if (el && !list.includes(el)) list.push(el)
@@ -247,17 +253,31 @@ export function OpenSpace({ sessions }: { sessions: SessionSummary[] }) {
           ))}
           {actors.map((a) => {
             const w = known.current.get(a.id)
-            return w ? <Person key={a.id} actor={a} who={w} zoom={zoom} now={now} bind={bind(a.id)} /> : null
+            return w ? (
+              <Person
+                key={a.id}
+                actor={a}
+                who={w}
+                zoom={zoom}
+                now={now}
+                showLabel={labelMode === "always" || hover === a.id || alert.has(a.id)}
+                onHover={(on) => setHover((h) => (on ? a.id : h === a.id ? null : h))}
+                bind={bind(a.id)}
+              />
+            ) : null
           })}
         </div>
       </div>
-      <p className="text-center text-[11px] text-muted-foreground">
-        Sprites :{" "}
-        <a className="underline underline-offset-2" href="https://jik-a-4.itch.io/metrocity" target="_blank" rel="noreferrer">
-          MetroCity
-        </a>{" "}
-        par JIK-A-4
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
+        <LabelModeToggle mode={labelMode} onChange={pickLabelMode} />
+        <span>
+          Sprites :{" "}
+          <a className="underline underline-offset-2" href="https://jik-a-4.itch.io/metrocity" target="_blank" rel="noreferrer">
+            MetroCity
+          </a>{" "}
+          par JIK-A-4
+        </span>
+      </div>
     </div>
   )
 }
@@ -274,7 +294,23 @@ function doing(a: Actor): string | null {
   return null
 }
 
-function Person({ actor: a, who, zoom, now, bind }: { actor: Actor; who: Who; zoom: number; now: number; bind: (el: HTMLElement | null) => void }) {
+function Person({
+  actor: a,
+  who,
+  zoom,
+  now,
+  showLabel,
+  onHover,
+  bind,
+}: {
+  actor: Actor
+  who: Who
+  zoom: number
+  now: number
+  showLabel: boolean
+  onHover: (on: boolean) => void
+  bind: (el: HTMLElement | null) => void
+}) {
   const { session: s, agent } = who
   const main = !agent
   const name = main ? `${sessionLabel(s)} · ${basename(s.cwd)}` : `#${agent.number} ${agent.type ?? "agent"}`
@@ -289,7 +325,10 @@ function Person({ actor: a, who, zoom, now, bind }: { actor: Actor; who: Who; zo
         ref={bind}
         data-dx={0}
         data-dy={-27}
-        className="pointer-events-none absolute flex max-w-40 -translate-x-1/2 -translate-y-full flex-col items-center gap-0.5"
+        className={cn(
+          "pointer-events-none absolute flex max-w-40 -translate-x-1/2 -translate-y-full flex-col items-center gap-0.5",
+          !showLabel && "invisible",
+        )}
         style={place(0, -27)}
       >
         <span className="max-w-full truncate rounded border bg-background/90 px-1 text-[10px] leading-4 font-medium whitespace-nowrap shadow-sm">
@@ -313,7 +352,11 @@ function Person({ actor: a, who, zoom, now, bind }: { actor: Actor; who: Who; zo
             type="button"
             aria-label={`${name}, ${note ?? status}${working && tool ? `, ${tool.tool}` : ""}`}
             onClick={() => go(s.id, agent ? agent.id : null)}
-            className="absolute h-0 w-0 rounded-md outline-none hover:bg-white/10 hover:ring-2 hover:ring-white/50 focus-visible:ring-2 focus-visible:ring-ring"
+            onPointerEnter={() => onHover(true)}
+            onPointerLeave={() => onHover(false)}
+            onFocus={() => onHover(true)}
+            onBlur={() => onHover(false)}
+            className="absolute h-0 w-0 rounded-md outline-none"
             style={{ ...place(-18, -34), width: 36 * zoom, height: 38 * zoom }}
           />
         </TooltipTrigger>

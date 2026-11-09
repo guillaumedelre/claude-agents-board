@@ -4,13 +4,13 @@ import type { Actor } from "@/components/office/engine"
 import { FURNITURE, WALL_H } from "@/components/office/layout"
 import { LOUNGE_BOTTOM, LOUNGE_LEFT, type Plan, W } from "./layout"
 
-export type Scene = { actors: Actor[]; plan: Plan; zoom: number }
+export type Scene = { actors: Actor[]; plan: Plan; zoom: number; outlined?: string[] }
 
 // Teinte de fond par îlot, pour distinguer les sessions voisines
 const TINTS = ["#5ab4ff", "#62d26f", "#f0a020", "#e06aa8", "#a98bff", "#3cc8c0"]
 
 export function drawOpenSpace(canvas: HTMLCanvasElement, sp: Sprites, scene: Scene, tick: number) {
-  const { actors, plan, zoom } = scene
+  const { actors, plan, zoom, outlined = [] } = scene
   const { height } = plan
   if (canvas.width !== W * zoom || canvas.height !== height * zoom) return
   const ctx = canvas.getContext("2d")!
@@ -54,7 +54,7 @@ export function drawOpenSpace(canvas: HTMLCanvasElement, sp: Sprites, scene: Sce
 
   // Meubles et personnages triés par la ligne de leurs pieds, comme dans le Bureau
   const items: { y: number; draw: () => void }[] = []
-  for (const a of actors) items.push({ y: a.y, draw: () => drawActor(ctx, sp, a, tick) })
+  for (const a of actors) items.push({ y: a.y, draw: () => drawActor(ctx, sp, a, tick, outlined.includes(a.id)) })
   for (const d of plan.desks) {
     items.push({
       y: d.y + 30,
