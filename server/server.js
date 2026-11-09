@@ -149,7 +149,7 @@ function responseText(resp) {
 
 // --- État ---
 
-let state = { sessions: {}, history: [], settings: { autoCleanupMs: 86400e3 } };
+let state = { sessions: {}, history: [], settings: { autoCleanupMs: 86400e3 }, counters: {} };
 let version = 0;
 const clients = new Set();
 
@@ -163,13 +163,27 @@ function push(thread, ev) {
 const findTool = (thread, toolUseId) =>
   thread.events.findLast((x) => x.kind === 'tool' && x.toolUseId === toolUseId);
 
+// Un agent isolé travaille dans <dépôt>/.claude/worktrees/<nom> : il appartient au projet du dépôt
+const projectRoot = (cwd) => (cwd ? cwd.replace(/[\\/]\.claude[\\/]worktrees[\\/].*$/, '') : null);
+
+// Numéro par machine et projet, jamais réutilisé : le nom d'une session reste le même après un nettoyage
+function nextNumber(host, cwd) {
+  const key = `${host}|${cwd}`;
+  state.counters[key] = (state.counters[key] ?? 0) + 1;
+  return state.counters[key];
+}
+
 function getSession(e, host, now) {
   let s = state.sessions[e.session_id];
   if (!s) {
     s = state.sessions[e.session_id] = {
       id: e.session_id,
+      number: nextNumber(host, projectRoot(e.cwd)),
+      name: null,
+      agentSeq: 0,
       host,
-      cwd: e.cwd || null,
+      cwd: projectRoot(e.cwd),
+      cwdFromMain: false,
       currentCwd: e.cwd || null,
       title: null,
       model: null,
@@ -189,7 +203,14 @@ function getSession(e, host, now) {
   s.tasks ??= {};
   s.lastSeen = now;
   s.host = host;
-  if (e.cwd && !e.agent_id) s.currentCwd = e.cwd;
+  if (e.cwd && !e.agent_id) {
+    s.currentCwd = e.cwd;
+    // Le premier événement a pu venir d'un sous-agent (autre dossier) : le fil principal fait foi
+    if (!s.cwdFromMain) {
+      s.cwd = projectRoot(e.cwd);
+      s.cwdFromMain = true;
+    }
+  }
   if (e.session_title) s.title = clip(e.session_title, 200);
   if (e.permission_mode) s.permissionMode = e.permission_mode;
   s.pending = s.pending.filter((p) => now - p.at < PENDING_TTL);
@@ -199,8 +220,10 @@ function getSession(e, host, now) {
 function getAgent(s, id, type, now) {
   let a = s.agents[id];
   if (!a) {
+    s.agentSeq = (s.agentSeq ?? 0) + 1;
     a = s.agents[id] = {
       id,
+      number: s.agentSeq,
       type: type || null,
       toolUseId: null,
       description: null,
@@ -543,6 +566,9 @@ function changed(sessionId) {
   scheduleSave();
 }
 
+// Sujet en cours : titre donné par Claude Code, sinon premier ligne du dernier prompt
+const subjectOf = (s) => s.title || s.events.findLast((x) => x.kind === 'prompt')?.text?.split('\n')[0].slice(0, 200) || null;
+
 const summaryOf = (s) => ({
   ...s,
   events: undefined,
@@ -551,7 +577,7 @@ const summaryOf = (s) => ({
   tasks: undefined,
   eventCount: s.events.length,
   lastEvent: s.events.findLast((x) => x.kind === 'prompt' || x.kind === 'message') ?? null,
-  firstPrompt: s.events.find((x) => x.kind === 'prompt')?.text?.slice(0, 200) ?? null,
+  subject: subjectOf(s),
   agents: Object.values(s.agents).map((a) => ({ ...a, events: undefined, prompt: undefined, result: undefined, eventCount: a.events.length })),
 });
 
@@ -628,7 +654,14 @@ async function api(req, res, pathname) {
     }
     const s = parts.length === 3 ? state.sessions[parts[2]] : null;
     if (!s) return json(res, 404, { error: 'not found' });
-    if (req.method === 'GET') return json(res, 200, { ...s, pending: undefined, estimates: estimatesFor(s.cwd) });
+    if (req.method === 'GET') return json(res, 200, { ...s, pending: undefined, subject: subjectOf(s), estimates: estimatesFor(s.cwd) });
+    if (req.method === 'PATCH') {
+      const body = JSON.parse(await readBody(req));
+      const name = typeof body?.name === 'string' ? body.name.trim().slice(0, 80) : null;
+      s.name = name || null;
+      changed(s.id);
+      return json(res, 200, { name: s.name });
+    }
     if (req.method === 'DELETE') {
       delete state.sessions[s.id];
       changed(s.id);
@@ -710,6 +743,19 @@ for (const signal of ['SIGTERM', 'SIGINT']) {
     if (e.code !== 'ENOENT') console.error(`load: ${e.message}`);
   }
   state.settings = { autoCleanupMs: 86400e3, ...state.settings };
+  for (const s of Object.values(state.sessions)) s.cwd = projectRoot(s.cwd);
+  // Sessions et agents enregistrés avant la numérotation
+  state.counters ??= {};
+  for (const s of Object.values(state.sessions).sort((a, b) => a.startedAt - b.startedAt)) {
+    s.number ??= nextNumber(s.host, s.cwd);
+    s.name ??= null;
+    for (const a of Object.values(s.agents).sort((x, y) => x.startedAt - y.startedAt)) {
+      if (a.number == null) {
+        s.agentSeq = (s.agentSeq ?? 0) + 1;
+        a.number = s.agentSeq;
+      }
+    }
+  }
   // État écrit avant l'historique des durées : on le reconstruit à partir des sessions conservées
   if (migrate) {
     for (const s of Object.values(state.sessions)) {

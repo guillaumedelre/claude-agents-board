@@ -21,6 +21,7 @@ export type LastTool = { tool: string; summary: string | null; at: number }
 
 export type Agent = {
   id: string
+  number: number
   type: string | null
   toolUseId: string | null
   description: string | null
@@ -41,6 +42,10 @@ export type Agent = {
 
 type SessionBase = {
   id: string
+  number: number
+  name: string | null
+  subject: string | null
+  lastTool?: LastTool | null
   host: string
   cwd: string | null
   currentCwd: string | null
@@ -58,7 +63,6 @@ export type SessionSummary = SessionBase & {
   agents: Agent[]
   eventCount: number
   lastEvent: BoardEvent | null
-  firstPrompt: string | null
 }
 
 export type Turn = { start: number; end: number | null }

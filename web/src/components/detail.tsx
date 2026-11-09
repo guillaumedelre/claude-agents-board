@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
-import { ArrowLeft, Bot, CheckCircle2, Copy, FolderGit2, Monitor, ScrollText, Trash2 } from "lucide-react"
+import { ArrowLeft, Bot, Check, Pencil, X, CheckCircle2, Copy, FolderGit2, Monitor, ScrollText, Trash2 } from "lucide-react"
 import { Gantt } from "@/components/gantt"
 import { AgentTree } from "@/components/session-list"
 import { StatusBadge } from "@/components/status"
@@ -22,7 +22,7 @@ import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { go } from "@/hooks/use-board"
-import { ago, clock, duration, sessionLabel, shortModel, tokens } from "@/lib/format"
+import { agentLabel, ago, clock, duration, sessionLabel, shortModel, tokens } from "@/lib/format"
 import { agentDisplay, sessionDisplay } from "@/lib/status"
 import { buildTree } from "@/lib/tree"
 import type { SessionDetail } from "@/lib/types"
@@ -82,24 +82,20 @@ export function Detail({ session: s, agentId, now }: { session: SessionDetail; a
           </Button>
           {agent && (
             <Button variant="ghost" size="sm" className="-ml-2 hidden md:inline-flex" onClick={() => go(s.id)}>
-              <ArrowLeft /> {sessionLabel({ title: s.title, firstPrompt: null })}
+              <ArrowLeft /> {sessionLabel(s)}
             </Button>
           )}
         </div>
         <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
-          <h1 className="min-w-0 flex-1 text-lg leading-tight font-semibold break-words">
-            {agent ? (
-              <span className="flex items-center gap-2">
-                <Bot className="size-5 shrink-0 text-muted-foreground" />
-                {agent.description ?? "Agent sans description"}
-              </span>
-            ) : (
-              sessionLabel({
-                title: s.title,
-                firstPrompt: s.events.find((e) => e.kind === "prompt")?.text,
-              })
-            )}
-          </h1>
+          {agent ? (
+            <h1 className="flex min-w-0 flex-1 items-center gap-2 text-lg leading-tight font-semibold break-words">
+              <Bot className="size-5 shrink-0 text-muted-foreground" />
+              <span className="shrink-0 font-mono text-muted-foreground">#{agent.number}</span>
+              {agentLabel(agent)}
+            </h1>
+          ) : (
+            <SessionName session={s} />
+          )}
           <StatusBadge status={agent ? agentDisplay(agent, now) : sessionDisplay(s, now)} />
           {!agent && <DeleteSession id={s.id} />}
         </div>
@@ -254,5 +250,63 @@ function DeleteSession({ id }: { id: string }) {
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+  )
+}
+
+function SessionName({ session: s }: { session: SessionDetail }) {
+  const [draft, setDraft] = useState<string | null>(null)
+  const save = async () => {
+    await fetch(`/api/sessions/${encodeURIComponent(s.id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: draft ?? "" }),
+    })
+    setDraft(null)
+  }
+
+  if (draft !== null) {
+    return (
+      <form
+        className="flex min-w-0 flex-1 items-center gap-1"
+        onSubmit={(e) => {
+          e.preventDefault()
+          void save()
+        }}
+      >
+        <input
+          autoFocus
+          value={draft}
+          maxLength={80}
+          placeholder={`Session ${s.number}`}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => e.key === "Escape" && setDraft(null)}
+          className="h-8 min-w-0 flex-1 rounded-md border bg-background px-2 text-base font-semibold outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        />
+        <Button type="submit" variant="ghost" size="icon" aria-label="Enregistrer le nom">
+          <Check />
+        </Button>
+        <Button type="button" variant="ghost" size="icon" aria-label="Annuler" onClick={() => setDraft(null)}>
+          <X />
+        </Button>
+      </form>
+    )
+  }
+
+  return (
+    <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+      <h1 className="flex items-center gap-1 text-lg leading-tight font-semibold break-words">
+        {sessionLabel(s)}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7 text-muted-foreground"
+          aria-label="Renommer la session"
+          onClick={() => setDraft(s.name ?? "")}
+        >
+          <Pencil className="size-3.5" />
+        </Button>
+      </h1>
+      {s.subject && <p className="truncate text-sm text-muted-foreground">sujet : {s.subject}</p>}
+    </div>
   )
 }

@@ -8,6 +8,7 @@ Tableau de bord web des sessions [Claude Code][claude-code] et de leurs sous-age
   - `POST /api/hooks` : reçoit le JSON d'un hook Claude Code tel quel (en-têtes optionnels `X-Agent-Host`, `X-Hook-Token`)
   - `GET /api/sessions` : résumé de toutes les sessions (sans les chronologies)
   - `GET /api/sessions/:id` : session complète, avec la chronologie de chaque agent, les tours de conversation, les tâches et les estimations de durée
+  - `PATCH /api/sessions/:id` : `{ "name": "..." }` renomme une session (80 caractères au maximum ; vide pour revenir au nom automatique)
   - `DELETE /api/sessions/:id` : retire une session du tableau ; `DELETE /api/sessions` retire les sessions fermées et celles sans nouvelles depuis 10 minutes
   - `GET /api/settings`, `PUT /api/settings` : `{ "autoCleanupMs": 86400000 }` (délai du nettoyage automatique : `0`, 1 h, 24 h ou 7 jours)
   - `GET /api/stream` : flux [SSE][sse] qui signale chaque changement (l'interface recharge alors les données)
@@ -15,7 +16,13 @@ Tableau de bord web des sessions [Claude Code][claude-code] et de leurs sous-age
 
 ## Ce qui est affiché
 
-La liste est organisée par machine (nom envoyé par le hook, voir plus bas), puis par dossier de projet. Chaque machine indique son nombre de sessions ouvertes et son état le plus urgent (en attente de toi, en cours, au repos).
+La liste est organisée par machine (nom envoyé par le hook, voir plus bas), puis par dossier de projet. Machines et dossiers se replient d'un clic (état retenu par navigateur) ; repliés, ils gardent leur nombre de sessions ouvertes et leur état le plus urgent (en attente de toi, en cours, au repos). Le dossier de projet est celui du fil principal de la session ; un agent qui travaille dans un worktree (`<dépôt>/.claude/worktrees/<nom>`) est rattaché au dépôt.
+
+Noms affichés :
+
+- Session : « Session N », numérotée à son arrivée par machine et par projet, sans jamais réutiliser un numéro, ou le nom donné à la main (crayon à côté du titre dans le détail). Le sujet en cours (titre que donne Claude Code, sinon dernier prompt) s'affiche en dessous et peut changer.
+- Dans l'arbre d'une session : « Session principale » (le fil principal et son dernier outil), puis ses sous-agents.
+- Sous-agent : « #N », son numéro d'ordre dans la session, son type et le nom de sa tâche (la description passée à l'outil `Agent`). Un agent lancé avant l'installation des hooks n'a pas de tâche connue : « Tâche inconnue · <début de son identifiant> ».
 
 - Par session : dossier de projet, machine, modèle, mode de permission, état (en cours, au repos, en attente de toi, fermée, sans nouvelles depuis 10 minutes), prompts, appels d'outils (entrée et sortie, tronquées à 4 000 caractères), réponse finale de chaque tour.
 - Par agent : type, description, consigne complète, arborescence parent / sous-agents, dernier outil utilisé, chronologie de ses outils, rapport final, tokens et durée (agents au premier plan uniquement).

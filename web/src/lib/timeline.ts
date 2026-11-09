@@ -1,4 +1,4 @@
-import { duration } from "./format"
+import { agentLabel, duration } from "./format"
 import { agentDisplay, type Display } from "./status"
 import { buildTree, type TreeNode } from "./tree"
 import type { BoardEvent, Estimate, SessionDetail, Task } from "./types"
@@ -59,7 +59,7 @@ function agentLanes(nodes: TreeNode[], s: SessionDetail, now: number, depth: num
     const lane: Lane = {
       key: `agent:${a.id}`,
       kind: "agent",
-      label: a.description ?? "Sans description",
+      label: `#${a.number} ${agentLabel(a)}`,
       detail: `${a.type ?? "agent"} · ${duration(elapsed)}${remaining(eta, now)}`,
       depth,
       status: display,

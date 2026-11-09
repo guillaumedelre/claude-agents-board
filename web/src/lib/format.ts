@@ -19,12 +19,14 @@ export function duration(ms: number) {
   return `${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}`
 }
 
-export const clock = (ts: number) =>
-  new Date(ts).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+export const clock = (ts: number) => new Date(ts).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
 
 export const tokens = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(n))
 
 export const shortModel = (m: string | null) => (m ? m.replace(/^claude-/, "").replace(/\[.*\]$/, "") : null)
 
-export const sessionLabel = (s: { title: string | null; firstPrompt?: string | null }) =>
-  s.title || s.firstPrompt?.split("\n")[0] || "Session sans titre"
+// Nom stable : celui donné à la main, sinon le numéro attribué à l'arrivée de la session
+export const sessionLabel = (s: { name: string | null; number: number }) => s.name || `Session ${s.number}`
+
+export const agentLabel = (a: { id: string; type: string | null; description: string | null }) =>
+  a.description || `Tâche inconnue · ${a.id.slice(0, 4)}`
