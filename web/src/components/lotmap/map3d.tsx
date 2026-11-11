@@ -52,7 +52,7 @@ export default function Map3D(props: Map3DProps) {
             <ambientLight intensity={0.6} />
             <directionalLight position={[3, 8, 5]} intensity={0.5} />
             <SkyDome radius={150} c={c} light={light} />
-            <TwinkleStars count={500} radius={60} color={light ? c.dim : c.ash} />
+            <TwinkleStars count={500} radius={60} color={light ? "#c9c2b4" : c.ash} />
             <SolarSystem
               board={props.board}
               c={c}

@@ -132,20 +132,22 @@ void main() {
   vec3 n = normalize(vNormal);
   vec3 l = normalize(sun - vWorld);
   vec3 v = normalize(cameraPosition - vWorld);
-  float diffuse = 0.25 + 0.75 * max(dot(n, l), 0.0);
+  // Thème sombre : lumière contrastée venue du soleil ; thème clair : ambiance forte et ombres douces, pour rester lisible
+  float facing = max(dot(n, l), 0.0);
+  float diffuse = mix(0.25 + 0.75 * facing, 0.72 + 0.28 * facing, ground);
   vec3 lit = col * diffuse;
   // Usure : une braise reste sur les planètes qui ont beaucoup servi
   lit += accent * worn * 0.12;
   // Atmosphère : un liseré qui s'avive et respire pendant un appel
   float rim = pow(1.0 - max(dot(n, v), 0.0), 3.0);
   float breath = heat > 0.0 ? 0.75 + 0.25 * sin(time * 4.0) : 1.0;
-  lit += atmosphere * rim * (0.45 + 1.4 * heat * breath);
+  lit += atmosphere * rim * (0.45 + 1.4 * heat * breath) * (1.0 - 0.45 * ground);
   lit += accent * glow;
   // Erreur : des fissures rouges qui vacillent
   float crack = smoothstep(0.9, 0.97, 1.0 - abs(fbm(p * 5.0 + 11.0) * 2.0 - 1.0));
   lit = mix(lit, vec3(2.2, 0.35, 0.25), crack * alarm * (0.55 + 0.45 * step(0.0, sin(time * 22.0))));
-  // Fond clair : on assombrit légèrement pour garder le contraste
-  lit = mix(lit, lit * 0.85, ground);
+  // Fond clair : couleurs légèrement éclaircies et saturées, sans virer au pastel
+  lit = mix(lit, lit * 1.12 + 0.04, ground);
   gl_FragColor = vec4(lit, 1.0);
 }
 `
@@ -161,6 +163,7 @@ varying vec3 vNormal;
 varying vec3 vWorld;
 varying vec2 vUv;
 varying float vCell;
+varying vec3 vSmooth;
 ${NOISE}
 float bump(vec3 n) { return 1.0 - cells(n * 2.6 + vec3(0.0, time * 0.04, 0.0)); }
 void main() {
@@ -184,6 +187,7 @@ void main() {
   vec4 w = modelMatrix * vec4(p0, 1.0);
   vWorld = w.xyz;
   vNormal = normalize(mat3(modelMatrix) * bent);
+  vSmooth = normalize(mat3(modelMatrix) * n);
   gl_Position = projectionMatrix * viewMatrix * w;
 }
 `
@@ -193,12 +197,14 @@ uniform float time;
 uniform float activity;
 uniform float attention;
 uniform float brightness;
+uniform float light;
 uniform vec3 amber;
 varying vec3 vObj;
 varying vec3 vNormal;
 varying vec3 vWorld;
 varying vec2 vUv;
 varying float vCell;
+varying vec3 vSmooth;
 ${NOISE}
 vec3 swirl(vec3 p, float a) {
   float k = a * (1.2 - abs(p.y));
@@ -229,11 +235,12 @@ void main() {
   vec3 p = swirl(vObj, time * speed * 1.5 + 3.0);
   vec3 q = vec3(fbmSoft(p * 1.2 + time * speed), fbmSoft(p * 1.2 - time * speed + 4.3), fbmSoft(p * 1.2 + 8.1));
   float streak = fbmSoft(vec3(p.x * 0.9, p.y * 3.0, p.z * 0.9) + q * 1.8);
-  vec3 indigo = vec3(0.07, 0.06, 0.3);
-  vec3 violet = vec3(0.28, 0.12, 0.6);
-  vec3 magenta = vec3(0.85, 0.18, 0.5);
-  vec3 red = vec3(0.9, 0.25, 0.2);
-  vec3 green = vec3(0.15, 0.72, 0.36);
+  // Thème clair : la palette lumineuse de la référence (bleu-indigo vif) ; thème sombre : plus profonde
+  vec3 indigo = mix(vec3(0.07, 0.06, 0.3), vec3(0.2, 0.26, 0.82), light);
+  vec3 violet = mix(vec3(0.28, 0.12, 0.6), vec3(0.45, 0.3, 0.92), light);
+  vec3 magenta = mix(vec3(0.85, 0.18, 0.5), vec3(0.98, 0.32, 0.62), light);
+  vec3 red = mix(vec3(0.9, 0.25, 0.2), vec3(1.0, 0.38, 0.32), light);
+  vec3 green = mix(vec3(0.15, 0.72, 0.36), vec3(0.25, 0.85, 0.5), light);
   vec3 col = mix(indigo, violet, smoothstep(0.3, 0.6, q.x));
   col = mix(col, magenta, smoothstep(0.55, 0.72, streak) * 0.85);
   col = mix(col, red, smoothstep(0.66, 0.8, streak) * 0.7);
@@ -259,9 +266,14 @@ void main() {
   vec3 n = normalize(vNormal);
   vec3 v = normalize(cameraPosition - vWorld);
   vec3 l = normalize(vec3(0.4, 0.9, 0.5));
-  float diffuse = 0.55 + 0.45 * max(dot(n, l), 0.0);
+  float diffuse = mix(0.55 + 0.45 * max(dot(n, l), 0.0), 0.82 + 0.18 * max(dot(n, l), 0.0), light);
   float rim = pow(1.0 - max(dot(n, v), 0.0), 2.5);
-  col = col * diffuse * (0.7 + 0.4 * vCell) + vec3(0.6, 0.65, 1.0) * rim * 0.3;
+  col = col * diffuse * (0.7 + 0.4 * vCell) + vec3(0.6, 0.65, 1.0) * rim * mix(0.3, 0.55, light);
+  // Rendu vitreux en thème clair : reflet doux du ciel et petit reflet net, calculés sur la normale lisse
+  vec3 s = normalize(vSmooth);
+  float sky = pow(max(dot(reflect(-v, s), vec3(0.0, 1.0, 0.0)), 0.0), 6.0);
+  float glint = pow(max(dot(reflect(-l, s), v), 0.0), 80.0);
+  col += light * (vec3(0.85, 0.92, 1.0) * sky * 0.35 + vec3(1.0) * glint * 0.6);
   gl_FragColor = vec4(col * (0.85 + 0.25 * activity) * brightness, 1.0);
 }
 `
@@ -443,11 +455,13 @@ void main() {
   // Sprite à dégradé radial : cœur blanc, halo de la couleur, bord transparent
   float core = 1.0 - smoothstep(0.0, 0.25, d);
   float halo = 1.0 - smoothstep(0.15, 1.0, d);
-  vec3 col = mix(color, vec3(1.0), core * (1.0 - light));
+  // Thème clair : teinte éclaircie (l'orange de la palette claire est foncé), sans cœur blanc
+  vec3 col = mix(mix(color, vec3(1.0, 0.92, 0.8), 0.35 * light), vec3(1.0), core * (1.0 - light));
   float a = (halo * 0.55 + core * 0.6) * vEdge * intensity;
   // Les grains restent sous 1 : le halo ne les élargit plus
   // En mélange additif, les grains superposés s'additionnent : plus le faisceau est dense, plus chaque grain est léger
-  gl_FragColor = vec4(col * min(0.6 + 0.3 * intensity * (1.0 - light), 0.98), a * 0.85 * density);
+  // Thème clair (mélange normal) : couleur pleine, sinon les grains virent au marron
+  gl_FragColor = vec4(col * min(mix(0.6 + 0.3 * intensity, 1.0, light), 0.98), a * 0.85 * density);
 }
 `
 

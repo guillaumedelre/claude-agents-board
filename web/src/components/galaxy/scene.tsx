@@ -115,7 +115,7 @@ function Scene({ sessions, now, c, motion, focus, onFocus, bloom, highlight }: G
       <ambientLight intensity={0.6} />
       <directionalLight position={[4, 10, 6]} intensity={0.5} />
       <SkyDome radius={300} c={c} light={light} />
-      <TwinkleStars count={900} radius={160} color={light ? c.dim : c.ash} size={1.6} />
+      <TwinkleStars count={900} radius={160} color={light ? "#c9c2b4" : c.ash} size={1.6} />
       <BlackHole radius={0.6} waiting={waiting} c={c} />
       <Label center position={[0, 1.4, 0]} zIndexRange={[12, 0]}>
         <div style={{ ...textStyle(c, waiting ? c.hot : c.bone, 13), letterSpacing: "0.12em" }}>TOI</div>

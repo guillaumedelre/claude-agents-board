@@ -529,7 +529,7 @@ function Sun({ board, c, motion, detailed, title, attention, onSun, onCore, body
         </mesh>
       )}
       <group scale={hover ? 1.12 : 1}>
-        <SunBody radius={SUN_R} activity={running ? 1 : 0.15} attention={!!attention} brightness={detailed ? 1 : 0.32} c={c} />
+        <SunBody radius={SUN_R} activity={running ? 1 : 0.15} attention={!!attention} brightness={detailed || isLight(c) ? 1 : 0.32} c={c} />
       </group>
       <Billboard>
         <mesh ref={done} visible={false}>

@@ -62,7 +62,8 @@ export function PlanetBody({
       heat: { value: 0 },
       alarm: { value: 0 },
       worn: { value: 0 },
-      base: { value: new THREE.Color(base) },
+      // Thème clair : fond de planète éclairci d'un tiers, sinon les planètes sombres (Terminal, Hooks) se perdent
+      base: { value: new THREE.Color(base).lerp(new THREE.Color("#ffffff"), light ? 0.35 : 0) },
       accent: { value: new THREE.Color(accent) },
       atmosphere: { value: new THREE.Color(atmosphere) },
       sun: { value: new THREE.Vector3() },
@@ -104,9 +105,10 @@ export function SunBody({ radius, activity, attention, brightness = 1, c }: { ra
       attention: { value: 0 },
       brightness: { value: 1 },
       bumps: { value: radius * 0.12 },
+      light: { value: isLight(c) ? 1 : 0 },
       amber: { value: new THREE.Color("#ffb347") },
     }),
-    [radius],
+    [radius, c],
   )
   // Couronne violette, accordée au soleil indigo
   const coronaColor = isLight(c) ? "#6b5bd6" : "#8f7bff"
@@ -131,7 +133,7 @@ export function SunBody({ radius, activity, attention, brightness = 1, c }: { ra
       <mesh ref={corona}>
         <sphereGeometry args={[radius * 1.55, 48, 24]} />
         <shaderMaterial
-          args={[{ uniforms: coronaUniforms, vertexShader: SPHERE_VERTEX, fragmentShader: CORONA_FRAGMENT, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }]}
+          args={[{ uniforms: coronaUniforms, vertexShader: SPHERE_VERTEX, fragmentShader: CORONA_FRAGMENT, transparent: true, depthWrite: false, blending: isLight(c) ? THREE.NormalBlending : THREE.AdditiveBlending }]}
         />
       </mesh>
     </>
@@ -160,14 +162,15 @@ export function BlackHole({ radius, waiting, c }: { radius: number; waiting: boo
   })
   return (
     <>
+      {/* Thème clair : le trou se fond dans le fond de l'espace plutôt qu'une tache noire */}
       <mesh>
         <sphereGeometry args={[radius, 40, 20]} />
-        <meshBasicMaterial color="#000000" />
+        <meshBasicMaterial color={isLight(c) ? c.ground : "#000000"} />
       </mesh>
       <mesh ref={ring}>
         <sphereGeometry args={[radius * 1.12, 40, 20]} />
         <shaderMaterial
-          args={[{ uniforms: ringUniforms, vertexShader: SPHERE_VERTEX, fragmentShader: CORONA_FRAGMENT, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }]}
+          args={[{ uniforms: ringUniforms, vertexShader: SPHERE_VERTEX, fragmentShader: CORONA_FRAGMENT, transparent: true, depthWrite: false, blending: isLight(c) ? THREE.NormalBlending : THREE.AdditiveBlending }]}
         />
       </mesh>
       <mesh ref={disk} rotation={[-Math.PI / 2 + 0.25, 0, 0]}>
@@ -181,7 +184,8 @@ export function BlackHole({ radius, waiting, c }: { radius: number; waiting: boo
               transparent: true,
               depthWrite: false,
               side: THREE.DoubleSide,
-              blending: THREE.AdditiveBlending,
+              // Sur fond clair, un mélange additif disparaît : mélange normal
+              blending: isLight(c) ? THREE.NormalBlending : THREE.AdditiveBlending,
             },
           ]}
         />
