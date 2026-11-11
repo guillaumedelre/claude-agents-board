@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react"
-import { BellRing, Bot, Loader2 } from "lucide-react"
+import { BellRing, Bot, Loader2, PanelLeftClose, PanelLeftOpen } from "lucide-react"
 import { Detail } from "@/components/detail"
 import { Logo } from "@/components/logo"
 import { Overview } from "@/components/overview"
 import { SessionList } from "@/components/session-list"
+import { SessionRail } from "@/components/session-rail"
 import { StatusBar } from "@/components/status-bar"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { go, useBoard, useHashRoute, useNow, useSession } from "@/hooks/use-board"
@@ -14,10 +16,19 @@ import { agentDisplay, isClosed, sessionDisplay } from "@/lib/status"
 import { cn } from "@/lib/utils"
 
 const SHOW_ENDED_KEY = "agents.showEnded"
+const COLLAPSED_KEY = "agents.sidebarCollapsed"
 
 function readShowEnded() {
   try {
     return localStorage.getItem(SHOW_ENDED_KEY) === "1"
+  } catch {
+    return false
+  }
+}
+
+function readCollapsed() {
+  try {
+    return localStorage.getItem(COLLAPSED_KEY) === "1"
   } catch {
     return false
   }
@@ -29,6 +40,15 @@ export default function App() {
   const { sessionId, agentId } = useHashRoute()
   const now = useNow()
   const [showEnded, setShowEnded] = useState(readShowEnded)
+  const [collapsed, setCollapsed] = useState(readCollapsed)
+  const toggleSidebar = (v: boolean) => {
+    setCollapsed(v)
+    try {
+      localStorage.setItem(COLLAPSED_KEY, v ? "1" : "0")
+    } catch {
+      // stockage indisponible : le choix vaut pour la page
+    }
+  }
   const summary = board?.sessions.find((s) => s.id === sessionId)
   const { detail, missing } = useSession(sessionId, summary?.lastSeen)
 
@@ -52,6 +72,16 @@ export default function App() {
   return (
     <div className="flex h-dvh flex-col">
       <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-2.5">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="-ml-2 hidden size-8 md:inline-flex"
+          onClick={() => toggleSidebar(!collapsed)}
+          aria-label={collapsed ? "Déplier la barre latérale" : "Replier la barre latérale"}
+          title={collapsed ? "Déplier la barre latérale" : "Replier la barre latérale"}
+        >
+          {collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
+        </Button>
         <button
           type="button"
           onClick={() => go(null)}
@@ -69,14 +99,28 @@ export default function App() {
       </header>
 
       <main className="flex min-h-0 flex-1">
-        <aside className={cn("min-h-0 w-full border-r md:block md:w-[400px] md:shrink-0", sessionId && "hidden")}>
-          {board && sessions.length > 0 ? (
-            <ScrollArea className="h-full">
-              <SessionList sessions={sessions} selection={{ sessionId, agentId }} now={now} autoCleanupMs={autoCleanupMs} />
-            </ScrollArea>
-          ) : (
-            board && <NoSessions hasEnded={endedCount > 0} />
+        <aside
+          className={cn(
+            "min-h-0 w-full border-r md:block md:shrink-0 md:transition-[width] md:duration-200",
+            collapsed ? "md:w-14" : "md:w-[400px]",
+            sessionId && "hidden",
           )}
+        >
+          {/* Repliée (écran large seulement) : un raccourci par session */}
+          {collapsed && (
+            <div className="hidden h-full md:block">
+              <SessionRail sessions={sessions} selectedId={sessionId} now={now} />
+            </div>
+          )}
+          <div className={cn("h-full", collapsed && "md:hidden")}>
+            {board && sessions.length > 0 ? (
+              <ScrollArea className="h-full">
+                <SessionList sessions={sessions} selection={{ sessionId, agentId }} now={now} autoCleanupMs={autoCleanupMs} />
+              </ScrollArea>
+            ) : (
+              board && <NoSessions hasEnded={endedCount > 0} />
+            )}
+          </div>
         </aside>
         <section className={cn("min-h-0 min-w-0 flex-1", !sessionId && "hidden md:block")}>
           {!sessionId ? (

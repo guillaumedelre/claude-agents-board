@@ -152,13 +152,49 @@ function responseText(resp) {
 
 // --- État ---
 
-let state = { sessions: {}, history: [], settings: { autoCleanupMs: 86400e3 }, counters: {}, activity: {} };
+let state = { sessions: {}, history: [], settings: { autoCleanupMs: 86400e3 }, counters: {}, activity: {}, usage: {} };
 
 // Appels d'outils et prompts par heure (clé : début de l'heure en ms), pour la heatmap de l'accueil
 function countActivity(kind, at) {
   const bucket = (state.activity[Math.floor(at / HOUR_MS) * HOUR_MS] ??= { tools: 0, prompts: 0 });
   bucket[kind] += 1;
 }
+// Appels d'outils par projet et par jour, pour l'usure sur 7 jours de la carte. La clé garde juste de quoi
+// retrouver la station côté interface : l'outil, les premiers mots de chaque commande, un marqueur mémoire.
+const MEMORY_PATH = /[\\/]\.claude[\\/](projects[\\/][^\\/]+[\\/]memory|rules)[\\/]|CLAUDE\.md/;
+const FILE_TOOLS = new Set(['Read', 'Write', 'Edit', 'NotebookEdit']);
+const MAX_USAGE_KEYS = 300;
+
+function usageKey(tool, input) {
+  const i = input && typeof input === 'object' ? input : {};
+  if (FILE_TOOLS.has(tool)) return MEMORY_PATH.test(String(i.file_path || i.notebook_path || '')) ? `${tool}:mem` : tool;
+  if (tool !== 'Bash') return String(tool).slice(0, 120);
+  const command = String(i.command || '');
+  const heads = command
+    .split(/&&|\|\||;|\||\n|\$\(|`|\(|\)/)
+    .map((part) =>
+      part
+        .trim()
+        .split(/\s+/)
+        .filter((w) => w && !/^[A-Za-z_]\w*=/.test(w))
+        .slice(0, 3)
+        .map((w) => w.replace(/["']/g, '').split('/').pop())
+        .join(' '),
+    )
+    .filter(Boolean)
+    .slice(0, 4);
+  return `Bash:${heads.join('|')}${MEMORY_PATH.test(command) ? ':mem' : ''}`.slice(0, 160);
+}
+
+function countUsage(project, tool, input, at) {
+  if (!project || !tool) return;
+  const day = Math.floor(at / 86400e3) * 86400e3;
+  const counts = ((state.usage[project] ??= {})[day] ??= {});
+  let key = usageKey(tool, input);
+  if (!(key in counts) && Object.keys(counts).length >= MAX_USAGE_KEYS) key = 'autre';
+  counts[key] = (counts[key] ?? 0) + 1;
+}
+
 let version = 0;
 const clients = new Set();
 
@@ -427,6 +463,7 @@ function handle(e, host) {
       thread.lastTool = { tool: e.tool_name, summary, at: now };
       if (!findTool(thread, e.tool_use_id)) {
         countActivity('tools', now);
+        countUsage(s.cwd, e.tool_name, e.tool_input, now);
         push(thread, {
           kind: 'tool',
           toolUseId: e.tool_use_id,
@@ -467,6 +504,7 @@ function handle(e, host) {
       }
       ev.pending = false;
       ev.ok = ok;
+      ev.endedAt = now;
       ev.output = clip(ok ? responseText(e.tool_response) : e.error || format(e.tool_response) || 'Échec', DETAIL_LIMIT);
       if (e.duration_ms != null) ev.durationMs = e.duration_ms;
       if (ok && e.tool_name === 'Agent' && e.tool_response && typeof e.tool_response.agentId === 'string') {
@@ -526,6 +564,36 @@ function handle(e, host) {
       }
       push(s, { kind: 'notice', text: clip(e.message, 300) || 'Notification' });
       break;
+    case 'PermissionRequest':
+      push(thread, { kind: 'notice', hook: e.hook_event_name, tool: e.tool_name, text: `Permission demandée : ${e.tool_name}` });
+      break;
+    case 'PermissionDenied': {
+      // Refus du mode auto : l'outil ne s'exécute pas et aucun PostToolUse ne suivra
+      let ev = findTool(thread, e.tool_use_id);
+      if (!ev) {
+        push(thread, { kind: 'tool', toolUseId: e.tool_use_id, tool: e.tool_name, summary: toolSummary(e.tool_name, e.tool_input), input: clip(format(e.tool_input), DETAIL_LIMIT) });
+        ev = thread.events.at(-1);
+      }
+      ev.pending = false;
+      ev.ok = false;
+      ev.denied = true;
+      ev.endedAt = now;
+      ev.output = clip(`Refusé : ${e.reason || 'permission refusée'}`, DETAIL_LIMIT);
+      break;
+    }
+    case 'PreCompact':
+      push(thread, { kind: 'notice', hook: e.hook_event_name, text: `Compactage du contexte (${e.trigger === 'manual' ? 'manuel' : 'auto'})` });
+      break;
+    case 'PostCompact':
+      push(thread, { kind: 'notice', hook: e.hook_event_name, text: 'Contexte compacté' });
+      break;
+    case 'PostModelSwitch':
+      if (!sub && e.to_model) s.model = e.to_model;
+      push(thread, { kind: 'notice', hook: e.hook_event_name, from: e.from_model || null, to: e.to_model || null, text: `Modèle : ${e.from_model} → ${e.to_model}` });
+      break;
+    case 'InstructionsLoaded':
+      push(thread, { kind: 'notice', hook: e.hook_event_name, summary: clip(e.file_path, 300), text: `Instructions chargées : ${e.file_path}` });
+      break;
     case 'SessionEnd':
       s.status = 'ended';
       s.endedAt = now;
@@ -568,6 +636,10 @@ function prune() {
   state.history = state.history.filter((h) => h.at >= historyCutoff);
   const activityCutoff = Date.now() - ACTIVITY_MS;
   for (const at of Object.keys(state.activity)) if (Number(at) < activityCutoff) delete state.activity[at];
+  for (const [project, days] of Object.entries(state.usage)) {
+    for (const day of Object.keys(days)) if (Number(day) < activityCutoff) delete days[day];
+    if (!Object.keys(days).length) delete state.usage[project];
+  }
   const cutoff = Date.now() - RETENTION_MS;
   const list = Object.values(state.sessions).sort((a, b) => b.lastSeen - a.lastSeen);
   list.forEach((s, i) => {
@@ -606,6 +678,11 @@ const summaryOf = (s) => ({
   subject: subjectOf(s),
   agents: Object.values(s.agents).map((a) => ({ ...a, events: undefined, prompt: undefined, result: undefined, eventCount: a.events.length })),
 });
+
+// Galaxie de l'accueil : sessions ouvertes avec leurs derniers événements allégés, de quoi animer chaque système
+const GALAXY_EVENTS = 60;
+const lightEvents = (events) =>
+  events.slice(-GALAXY_EVENTS).map((e) => ({ ...e, output: undefined, input: e.input ? e.input.slice(0, 400) : e.input, text: e.text ? e.text.slice(0, 120) : e.text }));
 
 // --- HTTP ---
 
@@ -647,6 +724,39 @@ async function api(req, res, pathname) {
   }
 
   if (parts[1] === 'stream' && parts.length === 2 && req.method === 'GET') return stream(req, res);
+
+  if (parts[1] === 'galaxy' && parts.length === 2 && req.method === 'GET') {
+    const cutoff = Date.now() - STALE_MS;
+    const sessions = Object.values(state.sessions)
+      .filter((s) => s.status !== 'ended' && !(s.status === 'running' && s.lastSeen < cutoff))
+      .map((s) => ({
+        ...s,
+        pending: undefined,
+        tasks: {},
+        estimates: { agents: {}, tasks: null },
+        subject: subjectOf(s),
+        events: lightEvents(s.events),
+        turns: s.turns.slice(-GALAXY_EVENTS),
+        agents: Object.fromEntries(
+          Object.values(s.agents)
+            .filter((a) => a.status === 'running' || (a.endedAt ?? 0) > cutoff)
+            .map((a) => [a.id, { ...a, prompt: undefined, result: undefined, events: lightEvents(a.events) }]),
+        ),
+      }));
+    return json(res, 200, { now: Date.now(), sessions });
+  }
+
+  if (parts[1] === 'usage' && parts.length === 2 && req.method === 'GET') {
+    const project = new URL(req.url, 'http://x').searchParams.get('cwd') || '';
+    const days = state.usage[project] || {};
+    const since = Date.now() - 7 * 86400e3;
+    const counts = {};
+    for (const [day, keys] of Object.entries(days)) {
+      if (Number(day) + 86400e3 < since) continue;
+      for (const [k, n] of Object.entries(keys)) counts[k] = (counts[k] ?? 0) + n;
+    }
+    return json(res, 200, { project, since, counts });
+  }
 
   if (parts[1] === 'activity' && parts.length === 2 && req.method === 'GET') {
     const hours = Object.entries(state.activity).map(([at, b]) => ({ at: Number(at), ...b }));
@@ -781,6 +891,25 @@ for (const signal of ['SIGTERM', 'SIGINT']) {
   }
   // Sessions et agents enregistrés avant la numérotation
   state.counters ??= {};
+  // Usure par projet reconstituée depuis les journaux encore en mémoire, la première fois
+  if (!state.usageBackfilled) {
+    state.usageBackfilled = true;
+    state.usage = {};
+    for (const s of Object.values(state.sessions)) {
+      for (const thread of [s, ...Object.values(s.agents)]) {
+        for (const ev of thread.events) {
+          if (ev.kind !== 'tool') continue;
+          let input = null;
+          try {
+            input = JSON.parse(ev.input || 'null');
+          } catch {
+            input = { command: ev.summary, file_path: ev.summary };
+          }
+          countUsage(s.cwd, ev.tool, input, ev.at);
+        }
+      }
+    }
+  }
   // Activité reconstituée depuis les journaux encore en mémoire, la première fois
   if (backfill) {
     state.activity = {};

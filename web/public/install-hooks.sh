@@ -38,7 +38,8 @@ import json, os, sys
 path, url, host, token, uninstall = sys.argv[1:6]
 events = ["SessionStart", "SessionEnd", "UserPromptSubmit", "PreToolUse", "PostToolUse",
           "PostToolUseFailure", "SubagentStart", "SubagentStop", "Stop", "StopFailure", "Notification",
-          "TaskCreated", "TaskCompleted"]
+          "TaskCreated", "TaskCompleted", "PermissionRequest", "PermissionDenied",
+          "PreCompact", "PostCompact", "PostModelSwitch", "InstructionsLoaded"]
 
 cfg = {}
 if os.path.exists(path):
@@ -50,7 +51,7 @@ token_header = f' -H "X-Hook-Token: {token}"' if token else ""
 hook = {
     "type": "command",
     "timeout": 5,
-    "command": f'curl -s -m 2 -H "Content-Type: application/json" -H "X-Agent-Host: {host}"{token_header} --data-binary @- {url}/api/hooks',
+    "command": f'curl -s -o /dev/null -m 2 -H "Content-Type: application/json" -H "X-Agent-Host: {host}"{token_header} --data-binary @- {url}/api/hooks',
 }
 
 def ours(h):

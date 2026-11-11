@@ -11,12 +11,18 @@ Tableau de bord web des sessions [Claude Code][claude-code] et de leurs sous-age
   - `PATCH /api/sessions/:id` : `{ "name": "..." }` renomme une session (80 caractères au maximum ; vide pour revenir au nom automatique)
   - `DELETE /api/sessions` : retire les sessions fermées et celles sans nouvelles depuis 10 minutes
   - `GET /api/settings`, `PUT /api/settings` : `{ "autoCleanupMs": 86400000 }` (délai du nettoyage automatique : `0`, 1 h, 24 h ou 7 jours)
+  - `GET /api/galaxy` : sessions ouvertes avec leurs 60 derniers événements par fil (sans les sorties d'outils, entrées tronquées à 400 caractères), pour animer la galaxie de l'accueil
+  - `GET /api/usage?cwd=<projet>` : appels d'outils du projet sur les 7 derniers jours, toutes sessions, par clé (outil, premiers mots de chaque commande shell, marqueur `:mem` pour la mémoire) ; sert à l'usure « projet 7 j » de la carte
   - `GET /api/stream` : flux [SSE][sse] qui signale chaque changement (l'interface recharge alors les données)
 - Stockage : volume nommé `agents_data` (`/data/state.json`), écrit au plus une fois par seconde : sessions, réglages et historique des durées. Les sessions sans activité depuis `RETENTION_DAYS` jours (7 par défaut) sont supprimées, avec 300 sessions au maximum et 500 événements par fil. L'historique des durées (agents et tâches terminés) est gardé à part, 30 jours et 5 000 entrées au maximum. Les compteurs d'activité par heure (heatmap de l'accueil) sont gardés 8 jours, indépendamment des sessions retirées.
 
 ## Ce qui est affiché
 
-La page d'accueil (titre « Agents » de la barre du haut) donne une vue d'ensemble de toutes les machines : machines actives, sessions ouvertes, agents en cours, agents terminés aujourd'hui, sessions qui attendent une réponse ou une permission, l'« Open space » (toutes les sessions ouvertes en pixel art, voir plus bas), agents en cours (avec leur dernier outil) et derniers agents terminés. Chaque ligne ouvre la session ou l'agent concerné. En bas, une heatmap montre l'activité des 7 derniers jours, heure par heure (nombre d'appels d'outils et de prompts, toutes machines confondues) ; le détail s'affiche au survol.
+La page d'accueil (titre « Agents » de la barre du haut) donne une vue d'ensemble de toutes les machines, sur toute la largeur et la hauteur disponibles. En haut, un bandeau liste les sessions qui attendent une réponse ou une permission (un clic ouvre la session). Dessous, trois onglets (choix retenu par navigateur) :
+
+- « Galaxie » (par défaut) : la galaxie des sessions ouvertes sur toute la hauteur (voir plus bas) ;
+- « Activité » (avec le nombre d'agents en cours) : quatre chiffres clés (actions sur 7 jours, aujourd'hui, heure et jour les plus actifs), la heatmap des 7 derniers jours heure par heure (appels d'outils et prompts, toutes machines confondues), puis les agents en cours (avec leur dernier outil) et les derniers terminés, chaque ligne ouvrant l'agent concerné. La heatmap utilise une seule teinte (bleu, avec ses propres paliers en thème sombre) sur une échelle en racine carrée, pour que les petites heures restent visibles à côté des pics ; au-dessus, le profil de la journée type (somme des 7 jours par heure), à droite le total de chaque jour ; le survol d'une case met en évidence sa ligne et sa colonne et affiche le détail (appels d'outils et prompts), l'heure en cours est entourée et les heures à venir sont en pointillés ;
+- « Open space » : toutes les sessions ouvertes en pixel art (voir plus bas).
 
 La liste est organisée par machine (nom envoyé par le hook, voir plus bas), puis par dossier de projet. Machines et dossiers se replient d'un clic (état retenu par navigateur) ; repliés, ils gardent leur nombre de sessions ouvertes et leur état le plus urgent (en attente de toi, en cours, au repos). Le dossier de projet est celui du fil principal de la session ; un agent qui travaille dans un worktree (`<dépôt>/.claude/worktrees/<nom>`) est rattaché au dépôt.
 
@@ -31,9 +37,9 @@ Noms affichés :
 
 Les hooks ne transmettent pas les messages intermédiaires du modèle, seulement le dernier message de chaque tour (`Stop`, `SubagentStop`).
 
-Le détail d'une session ou d'un agent a trois vues : « Journal » (la chronologie ci-dessus), « Timeline » et « Bureau ». Le bouton ✕ ou la touche Échap ferment le détail ; retirer une session du tableau passe par le menu « Nettoyage ».
+Le détail d'une session ou d'un agent a trois vues : « Journal » (la chronologie ci-dessus), « Timeline », « Bureau » et « Carte ». Le bouton ✕ ou la touche Échap ferment le détail ; retirer une session du tableau passe par le menu « Nettoyage ».
 
-La barre du haut ne garde que le titre (retour à l'accueil) et le nombre de sessions en attente de toi. La barre de statut en bas affiche :
+La barre du haut ne garde que le bouton qui replie la barre latérale, le titre (retour à l'accueil) et le nombre de sessions en attente de toi. Repliée (écran large seulement, choix retenu par navigateur), la barre latérale devient une colonne de raccourcis, un par session de la liste, regroupés par machine : initiales du projet (avec le numéro de session si le projet en a plusieurs), point d'état, nombre d'agents en cours ; le survol affiche la session, sa machine, son état et son sujet (ou sa demande en attente), un clic l'ouvre ; les machines actives, sessions ouvertes et agents en cours restent dans la barre de statut. La barre de statut en bas affiche :
 
 - à gauche : l'état du flux temps réel (« En direct », ou « Hors ligne » sur fond rouge), les machines actives, les sessions ouvertes, les agents en cours et l'heure du dernier événement reçu d'un hook ;
 - à droite : l'interrupteur « Fermées (N) », le menu « Nettoyage » (son libellé indique le mode : « manuel » ou « auto 1 h / 24 h / 7 j »), le bouton « Sons » et le thème (clair, sombre ou automatique, qui suit le système et est le choix par défaut, retenu par navigateur).
@@ -91,6 +97,61 @@ Le code est dans `web/src/components/openspace/` : plan des zones et îlots (`la
 
 Les sprites viennent des packs [MetroCity][metrocity] et [MetroCity Interior][metrocity-interior] de JIK-A-4 (aucune licence indiquée sur les pages). `scripts/office-assets.py` les extrait vers `web/public/office/` depuis le dossier des packs téléchargés (`python3 scripts/office-assets.py <dossier MetroCity>`, Pillow requis) : calques des personnages, comptoir sans la croix médicale, écran isolé, table, sol, mur, décor et coin salon (la machine à café est dessinée en code).
 
+### Carte
+
+Une carte du travail adaptée de [lot-map][lot-map] (Aleksei Volodin, licence MIT) : au centre, la session (« CLAUDE ») ou l'agent ouvert (« #N ») avec son modèle ; autour, dix stations. Chaque appel envoie une impulsion du centre vers sa station, puis une autre au retour ; les appels des sous-agents partent de la station Agents.
+
+| Station | Ce qui l'allume |
+|---------|-----------------|
+| Toi | prompts, demandes de permission (`PermissionRequest`), réponse finale, `AskUserQuestion` |
+| Modèle | chaque étape du modèle (« opus 5.5 · étape 3 », déduite des appels d'outils, voir plus bas), compactage du contexte (`PreCompact` / `PostCompact`), changement de modèle (`PostModelSwitch`), erreurs `StopFailure` |
+| Mémoire | lecture ou écriture dans le dossier mémoire de Claude Code, `.claude/rules/` ou un `CLAUDE.md` ; fichiers d'instructions chargés sans demande (`InstructionsLoaded`, impulsion creuse, compteur `↓`) |
+| Fichiers | `Read`, `Write`, `Edit`, `Grep`, `Glob`, et les commandes shell qui ne font que lire ou manipuler des fichiers (`cat`, `grep`, `sed`, `mv`…) |
+| Terminal | les autres commandes shell |
+| Réseau | `WebFetch`, `WebSearch`, serveurs MCP, commandes réseau (`curl`, `gh`, `ssh`, `git push`, `npm install`, `docker pull`…) |
+| Navigateur | outils de navigateur (Claude in Chrome, navigateur intégré) |
+| Agents | lancement de sous-agents et de workflows ; un point tourne autour de la station par sous-agent en cours |
+| Skills | `Skill`, `ToolSearch` |
+| Hooks | appel refusé (`PermissionDenied` du mode auto), ou resté sans réponse à la fin du fil (refusé par un hook ou une permission, ou interrompu) |
+
+Comme dans lot-map : les rayons s'épaississent avec l'usage, une ligne relie les dernières stations visitées par le fil principal, deux aiguilles tournent autour d'une station pendant un appel long (une minute, dix minutes), `×N` compte les appels simultanés, une pastille rouge compte les erreurs et refus depuis le dernier prompt, le centre et la station Modèle sonnent à un changement de modèle, et un large anneau quitte le centre quand la réponse est prête. La carte occupe tout le panneau, aux couleurs de lot-map (fond sombre ou crème selon le thème, orange pour ce qui est en cours, rouge pour les échecs). Les réglages (2D ou 3D, halo, usure, relecture) sont en surimpression en haut à gauche, l'action en cours en haut à droite ; les informations passent par des fenêtres au survol :
+
+- le centre (ou le soleil en 3D) : la session, son modèle, l'action en cours et les dernières lignes d'activité (`●` en cours, `·` terminé, `✕` échec ou refus, `◆` changement de modèle ; `+N` pour des appels terminés qui se suivent sur une station) ;
+- une station (ou une planète) : voir plus bas ;
+- une lune (sous-agent, en 3D) : son numéro et son type, son état et sa durée, ses appels en cours ou son dernier outil, son nombre d'appels, ses tokens et ses échecs.
+
+Étapes du modèle : les hooks ne signalent pas les requêtes au modèle, elles sont donc déduites. Le modèle travaille entre la fin d'un lot d'appels d'outils (ou le prompt, ou le lancement d'un sous-agent) et le lot suivant (ou la fin du tour) ; des appels lancés à moins de 300 ms d'intervalle, ou avant la fin des précédents, forment un seul lot. La durée affichée inclut donc la latence des hooks. Les étapes sont numérotées par tour pour la session, et sur toute sa vie pour un sous-agent.
+
+Différences avec lot-map : les hooks ne transmettent pas le remplissage du contexte, donc l'anneau de contexte autour du centre n'existe pas. Les impulsions partent à la réception de l'événement par le navigateur (pas à l'heure du serveur), pour rester visibles malgré un décalage d'horloge. Avec la réduction des animations activée sur le système, rien ne bouge.
+
+#### Carte en 3D
+
+Le bouton « 3D » au-dessus du fil (choix retenu par navigateur) remplace le dessin par une scène [three.js][three] ([React Three Fiber][r3f]) chargée seulement à la demande : la session en système solaire.
+
+- Claude est le soleil, dans un shader inspiré de « Matrix Galaxy » ([andrewray sur ShaderFrog][matrix-galaxy], code réécrit pour ce projet) : fond indigo et violet traversé de larges traînées magenta, rouges et vertes qui tourbillonnent, pluie de caractères façon Matrix, en petits glyphes 3×5 qui mêlent chiffres et katakana retournés en miroir comme dans le film (une tête claire par colonne, suivie d'une traîne qui s'efface), surface bosselée qui ondule et liseré lumineux ; tout s'accélère et s'avive quand Claude travaille, et vire à l'ambre quand la session t'attend. Il est plus gros dans la vue de session que dans la galaxie, pour que ses chiffres se lisent. Une couronne violette à jets l'entoure ; un anneau part à la réponse, un autre sonne à un changement de modèle.
+- Les stations sont des planètes sur des orbites en pointillés, dans un ordre fixe du soleil vers l'extérieur : Modèle, Mémoire, Fichiers, Terminal, Réseau, Navigateur, Skills, Hooks, Agents. Elles tournent lentement, les lointaines moins vite. Chaque liaison soleil-planète est un faisceau de grains lumineux qui avancent du soleil vers la planète en spirale (à la manière d'un nœud torique dessiné en particules) : l'usure règle sa densité et son épaisseur, l'activité sa vitesse et son éclat (orange vif pendant un appel, pointillés gris pour une station jamais utilisée). Comme en 2D : une planète usée garde une braise, une planète active s'allume (sarcelle pour Mémoire, rouge après une erreur ou un refus), un appel en cours la fait battre et remplit ses deux jauges circulaires comme en 2D (l'intérieure en une minute, recommencée à chaque tour, l'extérieure une fois en dix minutes ; arcs tracés par un shader, nets à toutes les distances), et son étiquette porte son compte, `×N` et les erreurs. Un trajet relie les dernières planètes visitées par le fil principal.
+- Chaque appel envoie une impulsion du soleil vers sa planète, puis une autre au retour (grise, ou rouge en cas d'échec) ; un signal reçu (instructions chargées) est une impulsion creuse.
+- Toi est posé devant le système en petit trou noir (disque d'accrétion qui tourne, plus vif et ambre quand la session t'attend), relié au soleil : prompts, demandes de permission et réponses y passent, et le lien bat en ambre quand la session t'attend.
+- Les sous-agents sont des lunes de la planète Agents, qui porte un anneau à bandes où elles gravitent. Chaque lune a la couleur de son type (même rang que les looks du Bureau, donc deux agents du même type ont la même couleur), son numéro et une courte traînée sur son orbite ; elle grandit à son lancement et s'éteint à sa fin, et ses appels partent d'elle. Quand Claude Code fournit les tokens d'un agent (agents au premier plan, à leur fin), elle grossit avec.
+
+Chaque planète a une surface procédurale (shader) qui dit ce qu'elle est, même sans icône : Modèle en cœur aux veines incandescentes qui battent avec l'activité, Mémoire glacée sarcelle, Fichiers rocheuse à cratères, Terminal sombre striée de lignes qui défilent, Réseau géante gazeuse à bandes, Navigateur océan et continents, Skills cristalline à éclats, Hooks en métal brossé, Agents géante pâle à anneau. Toutes tournent sur elles-mêmes, avec l'icône de leur station gravée sur une face, une atmosphère à leur couleur qui s'avive et respire pendant un appel, et des fissures rouges qui vacillent après une erreur ou un refus. Un badge d'icône flotte au-dessus de chaque planète ; dans la galaxie, il n'apparaît qu'en s'approchant. La légende sous la scène (icône et nom de chaque planète) met en évidence, au survol, les planètes de la station. Le fond de l'espace est un shader : nuages de nébuleuse bleu, violet et sarcelle qui dérivent très lentement, bande galactique inclinée et champ d'étoiles denses qui scintillent doucement, avec quelques étoiles plus vives par-dessus. Les grains des liaisons s'allègent quand le faisceau est dense, pour que leur somme ne déclenche pas le halo. Ses couleurs restent sous le seuil du halo. Le bouton « halo » (thème sombre seulement, choix retenu par navigateur, commun avec la galaxie) ajoute un bloom léger en post-traitement : seuls le soleil, les veines, les éclats, les fissures et le disque de Toi brillent (pas les grains des liaisons) ; il coûte plus cher à la carte graphique.
+
+Le survol d'une planète ouvre une fenêtre (la même qu'au survol d'une station 2D) : icône, nom et nombre d'appels, appels en cours avec leur durée (ou le dernier appel), les trois cibles les plus servies (fichiers, commandes, hôtes) et les échecs. Le clic l'épingle, comme en 2D (voir plus bas). La souris tourne (glisser), zoome (molette) et déplace (clic droit) la vue ; tant qu'on n'y a pas touché, la caméra se cadre selon la taille du panneau. Sans WebGL, un message renvoie vers la 2D ; avec la réduction des animations, la scène ne s'anime pas.
+
+#### Relecture, stations et usure
+
+- « ▶ Relecture » rejoue la session (ou l'agent) depuis son début : lecture, pause, retour au début, vitesse ×1 à ×60, et un curseur pour aller à un instant précis. La carte (2D ou 3D) et les fenêtres montrent l'état de ce moment ; « Direct » revient au temps réel.
+- Le survol d'une station ouvre sa fenêtre : icône, nom et nombre d'appels, appels en cours avec leur durée (ou le dernier appel), les trois cibles les plus servies (fichiers, commandes, hôtes) et les échecs. Un clic l'épingle en haut à droite (cercle en pointillés autour de la station) ; un second clic ou « détacher » la retire.
+- « usure » choisit ce qu'épaississent les rayons et ce que comptent les stations : la session (ou l'agent) ouverte, ou « projet 7 j », tous les appels d'outils du projet sur 7 jours, toutes sessions confondues (sans les étapes du modèle ni les prompts, que le serveur ne compte pas). Le serveur garde ces comptes 8 jours, indépendamment des sessions retirées, et les reconstitue au premier démarrage depuis les journaux encore en mémoire.
+
+Le code est dans `web/src/components/lotmap/` : classement des appels, dessin SVG, relecture et usure (`map.ts`, porté de lot-map), système solaire partagé avec la galaxie (`solar.tsx`, géométrie des orbites dans `orbits.ts`), astres et ciel (`bodies.tsx`, shaders GLSL dans `shaders.ts`), jauges circulaires (`gauge.tsx`), fenêtre de station (`card.tsx`), légende (`legend.tsx`), halo (`glow.tsx`, [postprocessing][postprocessing]), scène 3D de la session (`map3d.tsx`), couleurs des types (`colors.ts`), cadrage de la caméra (`fit.tsx`), horloge et calque des étiquettes (`clock.ts`, `label.tsx`), réglages partagés (`hooks.ts`), composant et fil (`index.tsx`). Les étiquettes 3D sont rendues dans un calque HTML posé sur la toile plutôt que dans le conteneur de React Three Fiber : avec ce dernier, la première étiquette montée restait vide et le démontage levait une erreur `removeChild` (drei 10.7.9, React 19.2).
+
+### Galaxie
+
+L'autre vue de la carte « Open space » de l'accueil : une galaxie où chaque session ouverte est un système solaire (le même que la carte 3D de la session, réduit, avec soleil et planètes grossis pour rester visibles de loin). Toi est au centre de l'univers, en trou noir dont le disque d'accrétion s'allume en ambre si au moins une session t'attend ; les systèmes tournent lentement autour de toi, un bras de spirale par machine (de la session la plus ancienne, près du centre, à la plus récente ; nom de la machine au bout du bras), vus en plongée à 35° au-dessus du plan de la galaxie, sur le même fond d'espace que la carte 3D. Vu de loin, l'éclat des soleils et des liaisons est réduit pour que le halo ne les transforme pas en taches. Chaque système est relié à Toi : le lien bat en ambre quand la session attend une permission. Vu de loin, un système ne montre que le nom de sa session et son projet ; les badges d'icône de ses planètes apparaissent en s'approchant. La légende et le bouton « halo » fonctionnent comme dans la carte 3D de la session.
+
+Un clic sur un soleil ou sur le nom d'une session arrête la rotation et zoome sur ce système, qui affiche alors le détail de ses planètes et leur fenêtre au survol ; « Ouvrir la session » ouvre la session sur sa carte en 3D, « Vue d'ensemble », Échap ou un clic dans le vide reviennent en arrière. Les données viennent de `GET /api/galaxy`, rechargé au plus une fois par seconde quand le tableau change. Le code est dans `web/src/components/galaxy/`.
+
 ## Démarrage
 
 ```bash
@@ -136,9 +197,12 @@ Options : `--url` / `-Url` pour une autre adresse, `--token` / `-Token` si `HOOK
 
 Une session déjà ouverte n'est pas garantie de prendre en compte les nouveaux hooks : la relancer. Elle apparaît sur le tableau à son premier événement, sans l'historique antérieur.
 
+Quand une version de l'application écoute de nouveaux événements, relancer le script d'installation sur chaque machine : il remplace les hooks existants sans créer de doublon.
+
 ### Fonctionnement des hooks
 
-- Ce sont des hooks `command` qui envoient le JSON reçu sur l'entrée standard à `POST /api/hooks`, pour 13 événements (`SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `SubagentStart`, `SubagentStop`, `Stop`, `StopFailure`, `Notification`, `TaskCreated`, `TaskCompleted`).
+- Ce sont des hooks `command` qui envoient le JSON reçu sur l'entrée standard à `POST /api/hooks`, pour 19 événements (`SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `SubagentStart`, `SubagentStop`, `Stop`, `StopFailure`, `Notification`, `TaskCreated`, `TaskCompleted`, `PermissionRequest`, `PermissionDenied`, `PreCompact`, `PostCompact`, `PostModelSwitch`, `InstructionsLoaded`). `PostModelSwitch` demande Claude Code 2.1.251 ou plus récent.
+- La réponse de l'application est jetée (`curl -o /dev/null`, `Out-Null` en PowerShell) : pour `PreCompact`, `PostModelSwitch` et `PermissionRequest`, Claude Code lit la sortie standard du hook (consignes de résumé, contexte ajouté, décision de permission), et un message d'erreur de l'application s'y retrouverait.
 - Ce ne sont pas des hooks `"type": "http"` : Claude Code refuse un hook HTTP vers une adresse privée (`10.0.0.10`) et n'autorise que le loopback.
 - Ils sont synchrones pour que les événements arrivent dans l'ordre : chaque appel d'outil attend la réponse de l'application. Si l'application ne répond pas, l'envoi abandonne au bout de 2 secondes et Claude Code continue : un hook en échec ne bloque pas l'agent.
 - Sous Windows, Claude Code exécute les hooks [avec Git Bash s'il est installé, sinon avec PowerShell][hooks]. Le script détecte Git Bash : avec lui, le hook est une commande `curl.exe` ; sans lui, une commande `Invoke-RestMethod`, plus lente car PowerShell met plusieurs centaines de millisecondes à démarrer, deux fois par appel d'outil. La commande PowerShell a été testée avec PowerShell 7 sous Linux, pas sous Windows.
@@ -183,6 +247,11 @@ Pour le serveur en local, depuis ce dossier : `PORT=3000 DATA_DIR=./data node se
 [^rebinding]: Protection DNS qui refuse les réponses pointant vers une adresse privée, pour empêcher un site web d'atteindre le réseau local.
 
 [claude-code]: https://code.claude.com/docs
+[lot-map]: https://github.com/alexeyw/lot-map
+[r3f]: https://r3f.docs.pmnd.rs/
+[postprocessing]: https://github.com/pmndrs/react-postprocessing
+[matrix-galaxy]: https://shaderfrog.com/editor/clqnb0c6w000apaz2sdvtij5m
+[three]: https://threejs.org/
 [metrocity]: https://jik-a-4.itch.io/metrocity-free-topdown-character-pack
 [metrocity-interior]: https://jik-a-4.itch.io/metrocity
 [git-for-windows]: https://gitforwindows.org/

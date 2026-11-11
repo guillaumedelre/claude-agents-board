@@ -14,7 +14,12 @@ export type BoardEvent = {
   output?: string | null
   ok?: boolean
   pending?: boolean
+  denied?: boolean
   durationMs?: number
+  endedAt?: number
+  hook?: string // événement d'origine des notices récentes (PermissionRequest, PreCompact…)
+  from?: string | null
+  to?: string | null
 }
 
 export type LastTool = { tool: string; summary: string | null; at: number }

@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { ArrowLeft, Bot, Check, Pencil, X, CheckCircle2, Copy, FolderGit2, Monitor, ScrollText } from "lucide-react"
 import { Gantt } from "@/components/gantt"
+import { LotMap } from "@/components/lotmap"
 import { Office } from "@/components/office"
 import { AgentTree } from "@/components/session-list"
 import { StatusBadge } from "@/components/status"
@@ -18,12 +19,12 @@ import { buildTree } from "@/lib/tree"
 import type { SessionDetail } from "@/lib/types"
 
 const VIEW_KEY = "agents.detailView"
-type View = "journal" | "timeline" | "office"
+type View = "journal" | "timeline" | "office" | "map"
 
 function readView(): View {
   try {
     const v = localStorage.getItem(VIEW_KEY)
-    return v === "timeline" || v === "office" ? v : "journal"
+    return v === "timeline" || v === "office" || v === "map" ? v : "journal"
   } catch {
     return "journal"
   }
@@ -144,12 +145,17 @@ export function Detail({ session: s, agentId, now }: { session: SessionDetail; a
             <TabsTrigger value="journal">Journal</TabsTrigger>
             <TabsTrigger value="timeline">Timeline</TabsTrigger>
             <TabsTrigger value="office">Bureau</TabsTrigger>
+            <TabsTrigger value="map">Carte</TabsTrigger>
           </TabsList>
         </Tabs>
       </header>
 
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
-        {view === "office" ? (
+      <div ref={scrollRef} className="relative min-h-0 flex-1 overflow-y-auto">
+        {view === "map" ? (
+          <div className="h-full p-2">
+            <LotMap session={s} agentId={agentId} />
+          </div>
+        ) : view === "office" ? (
           <div className="px-4 py-4 md:px-6">
             <Office session={s} agentId={agentId} now={now} />
           </div>

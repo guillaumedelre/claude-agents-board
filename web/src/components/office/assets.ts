@@ -54,7 +54,7 @@ function hash(text: string) {
 }
 
 // Un type garde la même apparence ; deux types d'une même session ne partagent pas un look tant qu'il en reste
-export function looksByType(agents: Agent[]) {
+export function looksByType(agents: Pick<Agent, "type" | "startedAt">[]) {
   const looks = new Map<string, Look>()
   const used = new Set<number>()
   const free = LOOKS.length - Object.keys(FIXED_LOOKS).length
