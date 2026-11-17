@@ -1,6 +1,7 @@
 import { BellRing } from "lucide-react"
 import { useState } from "react"
 import { ActivityHeatmap } from "@/components/activity-heatmap"
+import { TokenUsage } from "@/components/token-usage"
 import { GlobalMap } from "@/components/lotmap/global"
 import { OpenSpace } from "@/components/openspace"
 import { StatusDot, ToolIcon } from "@/components/status"
@@ -97,6 +98,7 @@ export function Overview({ sessions, now }: { sessions: SessionSummary[]; now: n
             ) : (
               <>
                 <ActivityHeatmap now={now} />
+                <TokenUsage now={now} />
                 <div className="grid gap-6 xl:grid-cols-2">
                   <Card>
                     <CardHeader>

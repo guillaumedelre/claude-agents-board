@@ -63,7 +63,13 @@ type SessionBase = {
   startedAt: number
   lastSeen: number
   endedAt: number | null
+  // Tokens et coût reçus par la télémétrie OpenTelemetry, absents sans elle
+  usage?: SessionUsage
 }
+
+export type Usage = { input: number; output: number; cacheRead: number; cacheCreation: number; cost: number; requests: number }
+
+export type SessionUsage = Usage & { models: Record<string, Usage>; last?: { at: number; model: string; context: number } }
 
 export type SessionSummary = SessionBase & {
   agents: Agent[]

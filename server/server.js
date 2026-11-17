@@ -3,6 +3,7 @@ const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const zlib = require('node:zlib');
 
 const PORT = Number(process.env.PORT) || 3000;
 const DATA_DIR = process.env.DATA_DIR || './data';
@@ -50,7 +51,7 @@ const json = (res, code, body) => {
   res.end(JSON.stringify(body));
 };
 
-const readBody = (req) =>
+const readBody = (req, raw = false) =>
   new Promise((resolve, reject) => {
     let size = 0;
     const chunks = [];
@@ -61,7 +62,7 @@ const readBody = (req) =>
         req.destroy();
       } else chunks.push(c);
     });
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    req.on('end', () => resolve(raw ? Buffer.concat(chunks) : Buffer.concat(chunks).toString('utf8')));
     req.on('error', reject);
   });
 
@@ -159,6 +160,53 @@ function countActivity(kind, at) {
   const bucket = (state.activity[Math.floor(at / HOUR_MS) * HOUR_MS] ??= { tools: 0, prompts: 0 });
   bucket[kind] += 1;
 }
+// --- Télémétrie OpenTelemetry (OTLP/HTTP en JSON) : tokens et coût de chaque requête au modèle ---
+// Seuls les compteurs sont gardés : l'événement transporte aussi l'e-mail et les identifiants du compte.
+const TOKEN_KINDS = ['input', 'output', 'cacheRead', 'cacheCreation'];
+const emptyUsage = () => ({ input: 0, output: 0, cacheRead: 0, cacheCreation: 0, cost: 0, requests: 0 });
+const otelValue = (v) => (v ? (v.stringValue ?? v.intValue ?? v.doubleValue ?? v.boolValue) : undefined);
+const count = (v) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : 0);
+
+function addUsage(into, u) {
+  for (const k of TOKEN_KINDS) into[k] += u[k];
+  into.cost += u.cost;
+  into.requests += 1;
+}
+
+// Renvoie l'id de la session concernée, si elle est connue
+function recordApiRequest(a, at) {
+  const u = { input: count(a.input_tokens), output: count(a.output_tokens), cacheRead: count(a.cache_read_tokens), cacheCreation: count(a.cache_creation_tokens), cost: count(a.cost_usd) };
+  const model = String(a.model || 'inconnu').slice(0, 80);
+  const bucket = (state.activity[Math.floor(at / HOUR_MS) * HOUR_MS] ??= { tools: 0, prompts: 0 });
+  addUsage(((bucket.models ??= {})[model] ??= emptyUsage()), u);
+  const s = state.sessions[a['session.id']];
+  if (!s) return null;
+  s.usage ??= { ...emptyUsage(), models: {} };
+  addUsage(s.usage, u);
+  addUsage((s.usage.models[model] ??= emptyUsage()), u);
+  // Taille du contexte envoyé à la dernière requête
+  s.usage.last = { at, model, context: u.input + u.cacheRead + u.cacheCreation };
+  return s.id;
+}
+
+function handleOtelLogs(body) {
+  const touched = new Set();
+  for (const rl of body?.resourceLogs ?? []) {
+    for (const sl of rl.scopeLogs ?? []) {
+      for (const r of sl.logRecords ?? []) {
+        const a = {};
+        for (const kv of r.attributes ?? []) a[kv.key] = otelValue(kv.value);
+        if (a['event.name'] !== 'api_request') continue;
+        const at = Math.min(Date.now(), Number(r.timeUnixNano) / 1e6 || Date.now());
+        const id = recordApiRequest(a, at);
+        if (id) touched.add(id);
+      }
+    }
+  }
+  for (const id of touched) changed(id);
+  if (!touched.size) scheduleSave();
+}
+
 let version = 0;
 const clients = new Set();
 // Clients du flux qui reçoivent aussi chaque session modifiée, allégée : toutes ("all", arbre de l'accueil) ou une seule (carte d'une session)
@@ -793,10 +841,22 @@ async function serveStatic(res, pathname) {
   res.end(await fs.readFile(file));
 }
 
+// Point d'arrivée OTLP des journaux : JSON seulement (OTEL_EXPORTER_OTLP_LOGS_PROTOCOL=http/json)
+async function otelLogs(req, res) {
+  if (req.method !== 'POST') return json(res, 405, { error: 'method not allowed' });
+  if (HOOK_TOKEN && req.headers['x-hook-token'] !== HOOK_TOKEN) return json(res, 401, { error: 'bad token' });
+  if (!String(req.headers['content-type'] || '').includes('json')) return json(res, 415, { error: 'use http/json' });
+  let raw = await readBody(req, true);
+  if (req.headers['content-encoding'] === 'gzip') raw = zlib.gunzipSync(raw, { maxOutputLength: MAX_BODY });
+  handleOtelLogs(JSON.parse(raw.toString('utf8')));
+  return json(res, 200, {});
+}
+
 const server = http.createServer(async (req, res) => {
   const { pathname } = new URL(req.url, 'http://x');
   try {
     if (pathname.startsWith('/api/')) return await api(req, res, pathname);
+    if (pathname === '/v1/logs') return await otelLogs(req, res);
     if (req.method !== 'GET' && req.method !== 'HEAD') return json(res, 405, { error: 'method not allowed' });
     await serveStatic(res, pathname);
   } catch (e) {

@@ -3,8 +3,9 @@ import { useDark } from "@/components/lotmap/hooks"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
+import type { Usage } from "@/lib/types"
 
-type Hour = { at: number; tools: number; prompts: number }
+export type Hour = { at: number; tools: number; prompts: number; models?: Record<string, Usage> }
 type Cell = { at: number; tools: number; prompts: number; value: number; future: boolean }
 
 const DAYS = 7
@@ -21,7 +22,7 @@ const fullDay = (d: Date) => d.toLocaleDateString("fr-FR", { weekday: "long", da
 const plural = (n: number, word: string) => `${n.toLocaleString("fr-FR")} ${word}${n > 1 ? "s" : ""}`
 const span = (at: number) => `de ${new Date(at).getHours()} h à ${new Date(at + HOUR_MS).getHours()} h`
 
-function useActivity() {
+export function useActivity() {
   const [hours, setHours] = useState<Hour[] | null>(null)
   useEffect(() => {
     let alive = true
@@ -43,7 +44,7 @@ function useActivity() {
 // Échelle en racine carrée : les petites heures restent visibles à côté des pics
 const levelOf = (value: number, max: number, steps: number) => (value && max ? Math.min(steps - 1, Math.floor(Math.sqrt(value / max) * steps)) : -1)
 
-function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
+export function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="flex flex-col gap-0.5 rounded-lg border bg-card px-4 py-3">
       <span className="text-xs text-muted-foreground">{label}</span>

@@ -74,6 +74,32 @@ for ev in events:
 if not hooks:
     cfg.pop("hooks")
 
+# Télémétrie OpenTelemetry : tokens et coût de chaque requête au modèle, envoyés en JSON à /v1/logs.
+# MARK liste les clés ajoutées par ce script, pour ne retirer que celles-là.
+MARK = "AGENTS_BOARD_OTEL"
+otel = {
+    "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
+    "OTEL_LOGS_EXPORTER": "otlp",
+    "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL": "http/json",
+    "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": f"{url}/v1/logs",
+}
+if token:
+    otel["OTEL_EXPORTER_OTLP_LOGS_HEADERS"] = f"X-Hook-Token={token}"
+env = cfg.setdefault("env", {})
+for k in filter(None, env.pop(MARK, "").split(",")):
+    env.pop(k, None)
+if uninstall != "1":
+    if "OTEL_LOGS_EXPORTER" in env:
+        print("Télémétrie : OTEL_LOGS_EXPORTER est déjà configuré dans settings.json, laissé tel quel (pas de tokens ni de coût sur le tableau).")
+    else:
+        added = [k for k in otel if k not in env]
+        for k in added:
+            env[k] = otel[k]
+        env[MARK] = ",".join(added)
+        print("Télémétrie OpenTelemetry activée : tokens et coût de chaque session.")
+if not env:
+    cfg.pop("env")
+
 tmp = path + ".tmp"
 with open(tmp, "w", encoding="utf-8") as f:
     json.dump(cfg, f, indent=2, ensure_ascii=False)

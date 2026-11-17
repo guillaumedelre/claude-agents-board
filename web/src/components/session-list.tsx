@@ -2,6 +2,7 @@ import { useState } from "react"
 import { BellRing, ChevronRight, FolderGit2, Monitor, PowerOff, Unplug } from "lucide-react"
 import { StatusDot, ToolIcon } from "@/components/status"
 import { Badge } from "@/components/ui/badge"
+import { UsageBadge } from "@/components/usage"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { go } from "@/hooks/use-board"
 import { agentLabel, ago, basename, duration, sessionLabel, shortModel } from "@/lib/format"
@@ -197,6 +198,7 @@ function SessionCard({
                 {shortModel(s.model)}
               </Badge>
             )}
+            {s.usage && <UsageBadge usage={s.usage} />}
             {s.agents.length > 0 && (
               <Badge variant="outline" className="text-[11px]">
                 {running > 0

@@ -21,7 +21,13 @@ export function duration(ms: number) {
 
 export const clock = (ts: number) => new Date(ts).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
 
-export const tokens = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(n))
+export const tokens = (n: number) =>
+  n >= 1e6 ? `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1).replace(".", ",")} M` : n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1).replace(".", ",")} k` : String(n)
+
+// Coût estimé en dollars, au format français
+export const usd = (n: number) => (n > 0 && n < 0.01 ? "< 0,01 $" : `${n.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $`)
+
+export const totalTokens = (u: { input: number; output: number; cacheRead: number; cacheCreation: number }) => u.input + u.output + u.cacheRead + u.cacheCreation
 
 export const shortModel = (m: string | null) => (m ? m.replace(/^claude-/, "").replace(/\[.*\]$/, "") : null)
 

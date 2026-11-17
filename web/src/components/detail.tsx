@@ -7,6 +7,7 @@ import { AgentTree } from "@/components/session-list"
 import { StatusBadge } from "@/components/status"
 import { Bubble, Timeline } from "@/components/timeline"
 import { Badge } from "@/components/ui/badge"
+import { UsageBadge } from "@/components/usage"
 import { Button } from "@/components/ui/button"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Separator } from "@/components/ui/separator"
@@ -116,7 +117,7 @@ export function Detail({ session: s, agentId, now }: { session: SessionDetail; a
               {shortModel(agent.model) && <span className="font-mono">{shortModel(agent.model)}</span>}
               <span>Lancé à {clock(agent.startedAt)}</span>
               <span>Durée {duration(agent.durationMs ?? (agent.endedAt ?? now) - agent.startedAt)}</span>
-              {agent.tokens != null && <span>{tokens(agent.tokens)} tokens</span>}
+              {agent.tokens != null && <span title="Taille de la dernière requête au modèle, d'après l'outil Agent (pas le total consommé)">{tokens(agent.tokens)} tokens à la dernière requête</span>}
               <CopyId label="ID agent" value={agent.id} />
             </>
           ) : (
@@ -135,6 +136,7 @@ export function Detail({ session: s, agentId, now }: { session: SessionDetail; a
                   {s.permissionMode}
                 </Badge>
               )}
+              {s.usage && <UsageBadge usage={s.usage} />}
               <span>Vu {ago(s.lastSeen, now)}</span>
               <CopyId label="ID session" value={s.id} copyText={`claude --resume ${s.id}`} />
             </>

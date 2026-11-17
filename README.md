@@ -2,7 +2,7 @@
 
 ![Claude Code hooks][badge-claude] ![Node.js 22][badge-node] ![React 19][badge-react] ![Vite 8][badge-vite] ![Tailwind CSS 4][badge-tailwind] ![TypeScript 6][badge-ts] ![shadcn/ui][badge-shadcn] ![Docker Compose][badge-docker] ![Traefik][badge-traefik] ![Serveur sans dépendance][badge-deps]
 
-Tableau de bord web, en temps réel, des sessions [Claude Code][claude-code] et de leurs sous-agents, sur toutes les machines du réseau local. Chaque session envoie ses [hooks][hooks] à l'application, auto-hébergée derrière [Traefik][traefik], qui affiche ce que font les agents : prompts, appels d'outils, sous-agents, tâches, demandes de permission.
+Tableau de bord web, en temps réel, des sessions [Claude Code][claude-code] et de leurs sous-agents, sur toutes les machines du réseau local. Chaque session envoie ses [hooks][hooks] et sa télémétrie [OpenTelemetry][otel-docs] à l'application, auto-hébergée derrière [Traefik][traefik], qui affiche ce que font les agents : prompts, appels d'outils, sous-agents, tâches, demandes de permission, tokens et coût.
 
 ![Arbre de l'accueil : toi, les sessions ouvertes de chaque machine et les stations qu'elles utilisent](docs/screenshots/home-tree.png)
 
@@ -14,6 +14,7 @@ Tableau de bord web, en temps réel, des sessions [Claude Code][claude-code] et 
 - [Ce qui est affiché](#ce-qui-est-affiché)
   - [Accueil](#accueil)
   - [Détail d'une session](#détail-dune-session)
+  - [Tokens et coût](#tokens-et-coût)
   - [Barre latérale, statut et nettoyage](#barre-latérale-statut-et-nettoyage)
 - [Architecture](#architecture)
 - [Développement](#développement)
@@ -30,8 +31,8 @@ Tableau de bord web, en temps réel, des sessions [Claude Code][claude-code] et 
 | **Accueil · Open space** : toutes les sessions en pixel art | **Session · Carte** : stations et impulsions par appel, en temps réel |
 | ![Timeline d'une session](docs/screenshots/session-timeline.png) | ![Bureau d'une session](docs/screenshots/session-office.png) |
 | **Session · Timeline** : Gantt des tours, agents et tâches | **Session · Bureau** : un personnage par agent, en pixel art |
-| ![Journal d'une session](docs/screenshots/session-journal.png) | |
-| **Session · Journal** : chronologie des prompts et des outils | |
+| ![Journal d'une session](docs/screenshots/session-journal.png) | ![Tokens et coût sur 7 jours](docs/screenshots/home-tokens.png) |
+| **Session · Journal** : chronologie des prompts et des outils | **Accueil · Activité** : tokens et coût estimé par jour et par modèle |
 
 > Les captures viennent d'une instance de démonstration alimentée par des sessions fictives.
 
@@ -82,7 +83,8 @@ Windows (PowerShell) :
 `<nom>` est le nom de la machine affiché dans le tableau (lettres, chiffres, `.`, `_`, `-`) ; par défaut, le nom d'hôte. Le script :
 
 - ajoute les hooks dans `~/.claude/settings.json` (ou `$CLAUDE_CONFIG_DIR/settings.json`), au niveau utilisateur pour couvrir tous les dossiers ;
-- garde les hooks déjà présents, ne crée pas de doublon s'il est relancé, et laisse une copie de l'ancien fichier dans `settings.json.bak-agents` ;
+- active la télémétrie OpenTelemetry vers l'application (variables du bloc `env`, voir [Tokens et coût](#tokens-et-coût)), sauf si un exportateur de journaux (`OTEL_LOGS_EXPORTER`) est déjà configuré : il le laisse alors tel quel et le signale ;
+- garde les hooks et réglages déjà présents, ne crée pas de doublon s'il est relancé, et laisse une copie de l'ancien fichier dans `settings.json.bak-agents` ;
 - teste la connexion à l'application et affiche le résultat.
 
 | Option (sh / PowerShell) | Effet |
@@ -90,11 +92,11 @@ Windows (PowerShell) :
 | `--host` / `-HostName` | Nom de la machine dans le tableau |
 | `--url` / `-Url` | Autre adresse de l'application |
 | `--token` / `-Token` | Valeur de `HOOK_TOKEN`, s'il est défini dans le `.env` de la stack |
-| `--uninstall` / `-Uninstall` | Retire les hooks |
+| `--uninstall` / `-Uninstall` | Retire les hooks et les variables de télémétrie ajoutées par le script |
 
 ### 3. Relancer les sessions
 
-Une session déjà ouverte n'est pas garantie de prendre en compte les nouveaux hooks : la relancer. Elle apparaît sur le tableau à son premier événement, sans l'historique antérieur.
+Une session déjà ouverte n'est pas garantie de prendre en compte les nouveaux hooks, et ne prend pas en compte la télémétrie : la relancer. Elle apparaît sur le tableau à son premier événement, sans l'historique antérieur.
 
 Quand une version de l'application écoute de nouveaux événements, relancer le script d'installation sur chaque machine : il remplace les hooks existants sans créer de doublon.
 
@@ -110,6 +112,22 @@ Quand une version de l'application écoute de nouveaux événements, relancer le
 </details>
 
 <details>
+<summary><strong>Variables de télémétrie ajoutées</strong></summary>
+
+| Variable | Valeur |
+|----------|--------|
+| `CLAUDE_CODE_ENABLE_TELEMETRY` | `1` |
+| `OTEL_LOGS_EXPORTER` | `otlp` |
+| `OTEL_EXPORTER_OTLP_LOGS_PROTOCOL` | `http/json` |
+| `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` | `<url>/v1/logs` |
+| `OTEL_EXPORTER_OTLP_LOGS_HEADERS` | `X-Hook-Token=<token>`, seulement avec `--token` |
+| `AGENTS_BOARD_OTEL` | Liste des clés ajoutées par le script, pour que `--uninstall` ne retire que celles-là |
+
+Seuls les journaux (événements) sont exportés, pas les métriques. Claude Code les envoie par lots, toutes les 5 secondes par défaut (`OTEL_LOGS_EXPORT_INTERVAL`).
+
+</details>
+
+<details>
 <summary><strong>Dépannage</strong></summary>
 
 | Symptôme | Cause probable |
@@ -118,6 +136,7 @@ Quand une version de l'application écoute de nouveaux événements, relancer le
 | Le test répond « token refusé » | `--token` différent de `HOOK_TOKEN` dans le `.env` de la stack |
 | Le test passe, mais aucune session n'apparaît | Session ouverte avant l'installation (la relancer), `"disableAllHooks": true` dans un fichier de réglages, ou `allowManagedHooksOnly` imposé par une configuration d'organisation |
 | `python3` introuvable (macOS) | Installer les Command Line Tools : `xcode-select --install` |
+| Pas de tokens ni de coût pour une session | Session ouverte avant l'installation (la relancer), ou `OTEL_LOGS_EXPORTER` déjà configuré ailleurs (message du script) |
 
 </details>
 
@@ -151,6 +170,8 @@ Quatre chiffres clés (actions sur 7 jours, aujourd'hui, heure et jour les plus 
 - Au-dessus, le profil de la journée type (somme des 7 jours par heure) ; à droite, le total de chaque jour.
 - Le survol d'une case met en évidence sa ligne et sa colonne et affiche le détail ; l'heure en cours est entourée, les heures à venir sont en pointillés.
 
+Dessous, la carte **Tokens et coût** (voir [Tokens et coût](#tokens-et-coût)) : tokens et coût estimé sur 7 jours et aujourd'hui, part lue depuis le cache, un histogramme des tokens par jour empilés par modèle (détail au survol) et un tableau par modèle (tokens, entrée, sortie, cache lu, requêtes, coût estimé).
+
 #### Open space
 
 Une seule pièce en pixel art pour toutes les sessions ouvertes, avec la porte et le coin salon du [Bureau](#bureau).
@@ -164,8 +185,8 @@ Une seule pièce en pixel art pour toutes les sessions ouvertes, avec la porte e
 
 Le détail d'une session ou d'un agent a quatre vues : **Journal**, **Timeline**, **Bureau** et **Carte** (choix retenu par navigateur). Le bouton ✕ ou la touche Échap ferment le détail. Dans l'en-tête, l'identifiant de la session se copie d'un clic sous la forme `claude --resume <id>`, pour la reprendre dans un terminal.
 
-- **Par session** : dossier de projet, machine, modèle, mode de permission, état, prompts, appels d'outils (entrée et sortie, tronquées à 4 000 caractères), réponse finale de chaque tour.
-- **Par agent** : type, description, consigne complète, arborescence parent / sous-agents, dernier outil utilisé, chronologie de ses outils, rapport final, tokens et durée (agents au premier plan uniquement).
+- **Par session** : dossier de projet, machine, modèle, mode de permission, tokens et coût estimé, état, prompts, appels d'outils (entrée et sortie, tronquées à 4 000 caractères), réponse finale de chaque tour.
+- **Par agent** : type, description, consigne complète, arborescence parent / sous-agents, dernier outil utilisé, chronologie de ses outils, rapport final, durée, et tokens de sa dernière requête au modèle (agents au premier plan uniquement).
 
 | État d'une session | Signification |
 |--------------------|---------------|
@@ -238,6 +259,16 @@ Une carte du travail adaptée de [lot-map][lot-map] : au centre, la session (« 
 
 Différences avec lot-map : les hooks ne transmettent pas le remplissage du contexte, donc l'anneau de contexte autour du centre n'existe pas. Les impulsions partent à la réception de l'événement par le navigateur (pas à l'heure du serveur), pour rester visibles malgré un décalage d'horloge.
 
+### Tokens et coût
+
+Les hooks ne transmettent pas la consommation : elle vient de la télémétrie [OpenTelemetry][otel-docs] de Claude Code, activée par le script d'installation. Claude Code envoie un événement `claude_code.api_request` par requête au modèle, avec le modèle, les tokens d'entrée, de sortie, lus depuis le cache et écrits dans le cache, et un coût estimé ; l'application le rattache à la session des hooks par son `session.id`.
+
+- **Par session** : un badge « 3,2 M · 2,75 $ » dans la carte de la barre latérale et dans l'en-tête du détail ; le survol détaille entrée, sortie, cache lu (avec sa part), cache écrit, nombre de requêtes et, s'il y en a plusieurs, chaque modèle.
+- **Sur l'accueil** : la carte « Tokens et coût » de l'onglet Activité, toutes machines confondues.
+- **Coût** : c'est l'estimation de Claude Code au tarif public de l'API. Avec un abonnement, ce n'est pas ce qui est facturé.
+- **Sous-agents** : leurs requêtes sont comptées dans la session, sans répartition par sous-agent (la télémétrie ne donne pas d'identifiant d'instance). Le chiffre affiché dans le détail d'un sous-agent vient de l'outil `Agent` et correspond à sa dernière requête au modèle, pas à son total.
+- **Données gardées** : seulement les compteurs. L'événement transporte aussi l'adresse e-mail et les identifiants du compte, que le serveur ignore.
+
 ### Barre latérale, statut et nettoyage
 
 La liste des sessions est organisée par machine (nom envoyé par le hook), puis par dossier de projet. Machines et dossiers se replient d'un clic ; repliés, ils gardent leur nombre de sessions ouvertes et leur état le plus urgent. Un agent qui travaille dans un worktree (`<dépôt>/.claude/worktrees/<nom>`) est rattaché au dépôt.
@@ -266,6 +297,7 @@ flowchart LR
   end
   CC1 -- "hooks command (curl)<br/>POST /api/hooks" --> S
   CC2 -- "POST /api/hooks" --> S
+  CC1 -. "télémétrie OTLP/HTTP JSON<br/>POST /v1/logs" .-> S
   S[server/server.js<br/>Node, sans dépendance] <--> V[(volume agents_data<br/>/data/state.json)]
   S -- "SSE /api/stream<br/>change + live" --> W[Interface web<br/>React + Vite]
   W -- "GET /api/..." --> S
@@ -274,7 +306,8 @@ flowchart LR
 
 - `web/` : interface React avec [Vite][vite], [Tailwind CSS][tailwind] v4 et [shadcn/ui][shadcn], compilée dans l'image Docker.
 - `server/server.js` : serveur Node sans dépendance. Il reçoit les hooks, tient l'état en mémoire, sert l'interface et pousse les changements en [SSE][sse].
-- **Temps réel** : chaque hook déclenche un signal `change` sur le flux. Les navigateurs abonnés avec `?live=all` (arbre de l'accueil) ou `?live=<id>` (carte d'une session) reçoivent en plus la session modifiée, allégée, sans avoir à la recharger.
+- **Tokens et coût** : la télémétrie OpenTelemetry de chaque session arrive sur `POST /v1/logs` ; le serveur n'en garde que les événements `api_request`.
+- **Temps réel** : chaque hook, et chaque lot de télémétrie, déclenche un signal `change` sur le flux. Les navigateurs abonnés avec `?live=all` (arbre de l'accueil) ou `?live=<id>` (carte d'une session) reçoivent en plus la session modifiée, allégée, sans avoir à la recharger.
 
 <details>
 <summary><strong>API</strong></summary>
@@ -289,7 +322,8 @@ flowchart LR
 | `DELETE /api/sessions` | Retire les sessions fermées et celles sans nouvelles depuis 10 minutes |
 | `GET /api/settings`, `PUT /api/settings` | `{ "autoCleanupMs": 86400000 }` : délai du nettoyage automatique (`0`, 1 h, 24 h ou 7 jours) |
 | `GET /api/galaxy` | Sessions ouvertes, allégées pour l'arbre de l'accueil : 60 derniers événements et 60 derniers tours par fil, sans les sorties d'outils, entrées tronquées à 400 caractères et textes à 120, sous-agents en cours ou terminés depuis moins de 10 minutes, sans tâches ni estimations |
-| `GET /api/activity` | Compteurs d'appels d'outils et de prompts par heure, sur 8 jours (heatmap) |
+| `GET /api/activity` | Par heure, sur 8 jours : appels d'outils, prompts (heatmap) et, par modèle, tokens et coût estimé |
+| `POST /v1/logs` | Reçoit la télémétrie OpenTelemetry de Claude Code (OTLP/HTTP en JSON, gzip accepté ; protobuf refusé avec 415). Exige `X-Hook-Token` si `HOOK_TOKEN` est défini |
 | `GET /api/stream` | Flux SSE qui signale chaque changement. `?live=all` pousse aussi, à chaque hook, la session modifiée sous la forme allégée de `/api/galaxy` ; `?live=<id>`, seulement cette session |
 
 </details>
@@ -303,7 +337,8 @@ Volume nommé `agents_data` (`/data/state.json`), écrit au plus une fois par se
 |--------|-----------|
 | Sessions | `RETENTION_DAYS` jours sans activité (7 par défaut), 300 sessions, 500 événements par fil, 200 tours et 200 tâches par session au maximum |
 | Historique des durées (agents et tâches terminés) | 30 jours, 5 000 entrées au maximum |
-| Activité par heure (heatmap) | 8 jours, indépendamment des sessions retirées |
+| Activité par heure (heatmap, tokens et coût par modèle) | 8 jours, indépendamment des sessions retirées |
+| Tokens et coût d'une session | Avec la session |
 
 </details>
 
@@ -312,7 +347,8 @@ Volume nommé `agents_data` (`/data/state.json`), écrit au plus une fois par se
 
 | Dossier ou fichier | Contenu |
 |--------------------|---------|
-| `server/server.js` | Réception des hooks, état, API, flux SSE |
+| `server/server.js` | Réception des hooks et de la télémétrie, état, API, flux SSE |
+| `web/src/components/usage.tsx`, `token-usage.tsx` | Badge tokens et coût d'une session, carte « Tokens et coût » de l'accueil |
 | `web/src/components/lotmap/` | Carte d'une session et arbre de l'accueil : classement des appels et dessin SVG (`map.ts`, porté de lot-map), fenêtres (`card.tsx`), arbre (`global.tsx`), horaires locaux des impulsions (`hooks.ts`), carte de session (`index.tsx`) |
 | `web/src/components/office/` | Bureau : plan et trajets sur une grille de 16 px (`layout.ts`), comportement des personnages (`engine.ts`), dessin trié par profondeur (`draw.ts`), sprites (`assets.ts`), étiquettes (`labels.tsx`) |
 | `web/src/components/openspace/` | Open space : plan des zones et îlots (`layout.ts`), dessin (`draw.ts`) ; réutilise le moteur et les sprites du Bureau |
@@ -356,6 +392,7 @@ Les sprites du Bureau sont extraits par `python3 scripts/office-assets.py <dossi
 [metrocity-interior]: https://jik-a-4.itch.io/metrocity
 [git-for-windows]: https://gitforwindows.org/
 [traefik]: https://traefik.io/traefik/
+[otel-docs]: https://code.claude.com/docs/en/monitoring-usage
 [vite]: https://vite.dev/
 [tailwind]: https://tailwindcss.com/
 [shadcn]: https://ui.shadcn.com/

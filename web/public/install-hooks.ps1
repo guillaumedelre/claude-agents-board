@@ -69,6 +69,35 @@ foreach ($ev in $events) {
 }
 if (-not @($cfg.hooks.PSObject.Properties).Count) { $cfg.PSObject.Properties.Remove('hooks') }
 
+# Télémétrie OpenTelemetry : tokens et coût de chaque requête au modèle, envoyés en JSON à /v1/logs.
+# $mark liste les clés ajoutées par ce script, pour ne retirer que celles-là.
+$mark = 'AGENTS_BOARD_OTEL'
+$otel = [ordered]@{
+  CLAUDE_CODE_ENABLE_TELEMETRY     = '1'
+  OTEL_LOGS_EXPORTER               = 'otlp'
+  OTEL_EXPORTER_OTLP_LOGS_PROTOCOL = 'http/json'
+  OTEL_EXPORTER_OTLP_LOGS_ENDPOINT = "$Url/v1/logs"
+}
+if ($Token) { $otel['OTEL_EXPORTER_OTLP_LOGS_HEADERS'] = "X-Hook-Token=$Token" }
+if (-not $cfg.PSObject.Properties['env']) { $cfg | Add-Member -NotePropertyName env -NotePropertyValue (New-Object PSObject) }
+$envCfg = $cfg.env
+if ($envCfg.PSObject.Properties[$mark]) {
+  foreach ($k in @($envCfg.$mark -split ',' | Where-Object { $_ })) { $envCfg.PSObject.Properties.Remove($k) }
+  $envCfg.PSObject.Properties.Remove($mark)
+}
+$otelNote = $null
+if (-not $Uninstall) {
+  if ($envCfg.PSObject.Properties['OTEL_LOGS_EXPORTER']) {
+    $otelNote = 'Télémétrie : OTEL_LOGS_EXPORTER est déjà configuré dans settings.json, laissé tel quel (pas de tokens ni de coût sur le tableau).'
+  } else {
+    $added = @($otel.Keys | Where-Object { -not $envCfg.PSObject.Properties[$_] })
+    foreach ($k in $added) { $envCfg | Add-Member -NotePropertyName $k -NotePropertyValue $otel[$k] }
+    $envCfg | Add-Member -NotePropertyName $mark -NotePropertyValue ($added -join ',')
+    $otelNote = 'Télémétrie OpenTelemetry activée : tokens et coût de chaque session.'
+  }
+}
+if (-not @($envCfg.PSObject.Properties).Count) { $cfg.PSObject.Properties.Remove('env') }
+
 # UTF-8 sans BOM : Claude Code lit settings.json comme du JSON strict
 [IO.File]::WriteAllText($settings, (ConvertTo-Json -InputObject $cfg -Depth 32), (New-Object Text.UTF8Encoding $false))
 
@@ -79,6 +108,7 @@ if ($Uninstall) {
 
 $runner = if ($gitBash) { "Git Bash + curl.exe" } else { "PowerShell (Git Bash introuvable)" }
 Write-Host "Hooks installés dans $settings pour la machine « $HostName », exécutés par $runner."
+if ($otelNote) { Write-Host $otelNote }
 
 # Un corps vide est refusé (400) sans créer de session : ça prouve que l'URL et le token sont bons
 $headers = @{}
