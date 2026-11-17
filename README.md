@@ -20,6 +20,7 @@ Tableau de bord web, en temps réel, des sessions [Claude Code][claude-code] et 
 - [Développement](#développement)
 - [Limites connues](#limites-connues)
 - [Crédits](#crédits)
+- [Licence](#licence)
 
 ## Aperçu
 
@@ -380,8 +381,12 @@ Les sprites du Bureau sont extraits par `python3 scripts/office-assets.py <dossi
 
 ## Crédits
 
-- Carte du travail adaptée de [lot-map][lot-map], par Aleksei Volodin (licence MIT).
-- Sprites des packs [MetroCity][metrocity] et [MetroCity Interior][metrocity-interior] de JIK-A-4 (aucune licence indiquée sur les pages).
+- Carte du travail adaptée de [lot-map][lot-map], par Aleksei Volodin (licence MIT, voir [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
+- Sprites des packs [MetroCity][metrocity] et [MetroCity Interior][metrocity-interior] de JIK-A-4 (licence [CC0 1.0][cc0]).
+
+## Licence
+
+[MIT](LICENSE). Les composants tiers gardent leur licence : voir [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 [^rebinding]: Protection DNS qui refuse les réponses pointant vers une adresse privée, pour empêcher un site web d'atteindre le réseau local.
 
@@ -390,6 +395,7 @@ Les sprites du Bureau sont extraits par `python3 scripts/office-assets.py <dossi
 [lot-map]: https://github.com/alexeyw/lot-map
 [metrocity]: https://jik-a-4.itch.io/metrocity-free-topdown-character-pack
 [metrocity-interior]: https://jik-a-4.itch.io/metrocity
+[cc0]: https://creativecommons.org/publicdomain/zero/1.0/
 [git-for-windows]: https://gitforwindows.org/
 [traefik]: https://traefik.io/traefik/
 [otel-docs]: https://code.claude.com/docs/en/monitoring-usage
