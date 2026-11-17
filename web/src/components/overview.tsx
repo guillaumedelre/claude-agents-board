@@ -1,7 +1,7 @@
 import { BellRing } from "lucide-react"
 import { useState } from "react"
 import { ActivityHeatmap } from "@/components/activity-heatmap"
-import { Galaxy } from "@/components/galaxy"
+import { GlobalMap } from "@/components/lotmap/global"
 import { OpenSpace } from "@/components/openspace"
 import { StatusDot, ToolIcon } from "@/components/status"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -13,7 +13,7 @@ import type { Agent, SessionSummary } from "@/lib/types"
 
 const RECENT_DONE = 8
 const TAB_KEY = "agents.homeTab"
-type Tab = "galaxy" | "activity" | "openspace"
+type Tab = "map" | "activity" | "openspace"
 
 type AgentRow = { agent: Agent; session: SessionSummary }
 
@@ -30,13 +30,13 @@ export function Overview({ sessions, now }: { sessions: SessionSummary[]; now: n
   const [tab, setTab] = useState<Tab>(() => {
     try {
       const v = localStorage.getItem(TAB_KEY)
-      return v === "activity" || v === "openspace" ? v : "galaxy"
+      return v === "activity" || v === "openspace" ? v : "map"
     } catch {
-      return "galaxy"
+      return "map"
     }
   })
   const pickTab = (v: string) => {
-    const next = v === "activity" || v === "openspace" ? v : "galaxy"
+    const next = v === "activity" || v === "openspace" ? v : "map"
     setTab(next)
     try {
       localStorage.setItem(TAB_KEY, next)
@@ -67,7 +67,7 @@ export function Overview({ sessions, now }: { sessions: SessionSummary[]; now: n
         )}
         <Tabs value={tab} onValueChange={pickTab}>
           <TabsList>
-            <TabsTrigger value="galaxy">Galaxie</TabsTrigger>
+            <TabsTrigger value="map">Carte</TabsTrigger>
             <TabsTrigger value="activity">
               Activité
               {running.length > 0 && <span className="ml-1 rounded-full bg-running px-1.5 text-[10px] text-background tabular-nums">{running.length}</span>}
@@ -77,9 +77,9 @@ export function Overview({ sessions, now }: { sessions: SessionSummary[]; now: n
         </Tabs>
       </div>
 
-      {tab === "galaxy" ? (
+      {tab === "map" ? (
         <div className="min-h-0 flex-1 p-4 md:px-6">
-          <Galaxy sessions={open} now={now} className="h-full min-h-80" />
+          <GlobalMap sessions={open} className="h-full min-h-80" />
         </div>
       ) : (
         <div className="relative min-h-0 flex-1 overflow-y-auto">

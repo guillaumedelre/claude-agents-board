@@ -91,13 +91,3 @@
     @apply bg-background font-sans text-foreground antialiased;
   }
 }
-
-/* Apparition des badges d'icône de la carte 3D */
-@keyframes lotmap-fade {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}

@@ -4,12 +4,12 @@ const ICONS = Object.fromEntries(STATIONS.map((s) => [s.id, s.icon])) as Record<
 const secs = (ms: number) => (ms < 60_000 ? `${Math.max(0, Math.round(ms / 1000))} s` : `${Math.floor(ms / 60_000)} min ${Math.round((ms % 60_000) / 1000)} s`)
 
 // Fenêtre d'une station : icône, compte, appels en cours, cibles les plus fréquentes, erreurs
-export function StationCard({ board, station, c, now, counts }: { board: MapBoard; station: StationId; c: Palette; now: number; counts?: MapBoard["counts"] }) {
+export function StationCard({ board, station, c, now }: { board: MapBoard; station: StationId; c: Palette; now: number }) {
   const own = board.entries.filter((e) => e.station === station)
   const running = own.filter((e) => e.status === "run")
   const errors = own.filter((e) => e.status === "err" || e.status === "block")
   const last = own.findLast((e) => e.status !== "run")
-  const n = (counts ?? board.counts)[station] ?? 0
+  const n = board.counts[station] ?? 0
   const line = (e: Entry) => (
     <div key={e.id} className="max-w-72 truncate">
       {e.label}
@@ -25,7 +25,6 @@ export function StationCard({ board, station, c, now, counts }: { board: MapBoar
         <span className="font-semibold">{STATION_NAME[station]}</span>
         <span style={{ color: c.dim }}>
           {n} appel{n > 1 ? "s" : ""}
-          {counts ? " (projet, 7 j)" : ""}
         </span>
       </div>
       {running.length > 0 && (
@@ -68,7 +67,7 @@ const took = (ms: number) => (ms < 1000 ? `${Math.max(1, Math.round(ms))} ms` : 
 
 const box = (c: Palette) => ({ background: c.raised, border: `1px solid ${c.line}`, color: c.ash })
 
-// Fenêtre du soleil : ce que faisait le fil, l'action en cours puis les dernières lignes (l'ancien fil de la carte)
+// Fenêtre du centre : ce que faisait le fil, l'action en cours puis les dernières lignes
 export function SessionCard({ board, c, title, max = 10 }: { board: MapBoard; c: Palette; title: string; max?: number }) {
   const rows = foldRows(board.entries, max)
   return (
@@ -101,37 +100,6 @@ export function SessionCard({ board, c, title, max = 10 }: { board: MapBoard; c:
           })}
         </ul>
       )}
-    </div>
-  )
-}
-
-// Fenêtre d'une lune : le sous-agent, son état, son dernier outil et ses appels en cours
-export function AgentCard({ board, agentId, c, now, color }: { board: MapBoard; agentId: string; c: Palette; now: number; color: string }) {
-  const m = board.crew.find((x) => x.id === agentId)
-  if (!m) return null
-  const own = board.entries.filter((e) => e.agentId === agentId && e.station !== "model")
-  const running = own.filter((e) => e.status === "run")
-  const errors = own.filter((e) => e.status === "err" || e.status === "block").length
-  return (
-    <div className="flex min-w-48 flex-col gap-1 rounded-md px-3 py-2 font-mono text-xs shadow-lg" style={box(c)}>
-      <div style={{ color: c.bone }}>
-        <span style={{ color }}>#{m.number}</span> <span className="font-semibold">{m.type}</span>
-        <span style={{ color: c.dim }}>
-          {" "}
-          · {m.status === "running" ? "en cours" : m.status === "stopped" ? "interrompu" : "terminé"} · {secs((m.endedAt ?? now) - m.startedAt)}
-        </span>
-      </div>
-      {running.slice(-3).map((e) => (
-        <div key={e.id} className="max-w-72 truncate" style={{ color: c.hot }}>
-          ● {STATION_NAME[e.station]} · {e.label}
-        </div>
-      ))}
-      {!running.length && m.lastTool && <div className="max-w-72 truncate">dernier : {m.lastTool}</div>}
-      <div style={{ color: c.dim }}>
-        {own.length} appel{own.length > 1 ? "s" : ""}
-        {m.tokens ? ` · ${Math.round(m.tokens / 1000)}k tokens` : ""}
-        {errors > 0 && <span style={{ color: c.red }}> · {errors} échec{errors > 1 ? "s" : ""}</span>}
-      </div>
     </div>
   )
 }

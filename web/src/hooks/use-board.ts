@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import type { Board, SessionDetail } from "@/lib/types"
 
 export function useBoard() {
@@ -90,4 +90,26 @@ export function useHashRoute() {
 
 export const go = (sessionId?: string | null, agentId?: string | null) => {
   window.location.hash = sessionId ? `/${sessionId}${agentId ? `/${agentId}` : ""}` : "/"
+}
+
+// Sessions allégées poussées par le serveur à chaque hook : "all" pour toutes, ou l'id d'une session.
+// onHello à chaque (re)connexion, pour recharger ce qui a pu être manqué.
+export function useLive(filter: string | null, onSession: (s: SessionDetail) => void, onHello?: () => void) {
+  const handlers = useRef({ onSession, onHello })
+  useEffect(() => {
+    handlers.current = { onSession, onHello }
+  })
+  useEffect(() => {
+    if (!filter) return
+    const es = new EventSource(`/api/stream?live=${encodeURIComponent(filter)}`)
+    es.addEventListener("hello", () => handlers.current.onHello?.())
+    es.addEventListener("live", (e) => {
+      try {
+        handlers.current.onSession(JSON.parse((e as MessageEvent).data).session)
+      } catch {
+        // message illisible : le suivant le remplacera
+      }
+    })
+    return () => es.close()
+  }, [filter])
 }

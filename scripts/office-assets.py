@@ -31,7 +31,6 @@ for i, o in enumerate(outfits):
     sheet.paste(o, (0, 32 * i))
 save(sheet, "outfits.png")
 save(load("MetroCity/Hair/Hairs.png"), "hairs.png")
-save(load("MetroCity/CharacterModel/Shadow.png"), "shadow.png")
 
 # Reception counter with a monitor; the medical cross is covered with the neighbouring panel
 misc = load("Interior/Hospital/Miscellaneous-Sheet.png")

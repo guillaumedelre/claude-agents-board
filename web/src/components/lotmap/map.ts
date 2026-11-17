@@ -3,7 +3,7 @@
 import type { BoardEvent, SessionDetail } from "@/lib/types"
 
 export type StationId = "you" | "model" | "memory" | "files" | "shell" | "web" | "browser" | "agents" | "skills" | "hooks"
-export type Status = "run" | "ok" | "err" | "block"
+type Status = "run" | "ok" | "err" | "block"
 
 export type Entry = {
   id: string
@@ -15,19 +15,7 @@ export type Entry = {
   endedAt?: number
   status: Status
   mark?: "switch" | "done"
-  agentId?: string // sous-agent à l'origine de l'appel
-}
-
-export type CrewMember = {
-  id: string
-  number: number
-  type: string
-  parentId: string | null
-  status: "running" | "done" | "stopped"
-  startedAt: number
-  endedAt: number | null
-  tokens: number | null
-  lastTool: string | null
+  hub?: string // session d'origine, sur l'arbre de l'accueil
 }
 
 export type MapBoard = {
@@ -36,7 +24,6 @@ export type MapBoard = {
   pushed: number
   faults: Partial<Record<StationId, number>>
   agents: number
-  crew: CrewMember[]
   model: string | null
   switchedAt?: number
   core: string
@@ -56,8 +43,6 @@ export const STATIONS: { id: StationId; name: string; icon: string }[] = [
   { id: "skills", name: "Skills", icon: "M1.5 -8.5L-5.5 1h4.5l-1.5 7.5l7.5 -9.8h-4.5z" },
   { id: "hooks", name: "Hooks", icon: `M2.5 -5.5v8a4.2 4.2 0 1 1 -8.4 0v-1.5${ring(2.5, -7.3, 1.8)}` },
 ]
-// Les stations qui deviennent des planètes en 3D, du soleil vers l'extérieur (Toi est hors du système)
-export const PLANETS: StationId[] = ["model", "memory", "files", "shell", "web", "browser", "skills", "hooks", "agents"]
 export const STATION_NAME = Object.fromEntries(STATIONS.map((s) => [s.id, s.name])) as Record<StationId, string>
 
 // --- Classement des appels ---
@@ -119,7 +104,7 @@ function classifyBash(command: string, description: string): { station: StationI
   return { station: "shell", label }
 }
 
-export function classify(tool: string, input: Record<string, unknown>): { station: StationId; label: string } {
+function classify(tool: string, input: Record<string, unknown>): { station: StationId; label: string } {
   switch (tool) {
     case "Read":
     case "Write":
@@ -299,7 +284,7 @@ export function buildBoard(s: SessionDetail, agentId: string | null): MapBoard {
   const open = agent ? agent.status === "running" : s.status === "running"
 
   const entries = entriesOf(agent ? (agent.events ?? []) : s.events, "core", open)
-  for (const a of crew) entries.push(...entriesOf(a.events ?? [], "agents", a.status === "running").map((e) => ({ ...e, agentId: a.id })))
+  for (const a of crew) entries.push(...entriesOf(a.events ?? [], "agents", a.status === "running"))
 
   // Modèle de la session à un instant donné, d'après les changements de modèle reçus
   const switches = s.events.filter((e) => e.hook === "PostModelSwitch")
@@ -315,7 +300,7 @@ export function buildBoard(s: SessionDetail, agentId: string | null): MapBoard {
       entries.push(...stepsOf(s.events, { id: `t${t.start}`, start: t.start, end, open }, sessionModelAt, "core"))
     }
   }
-  for (const a of crew) entries.push(...agentSteps(a, "agents").map((e) => ({ ...e, agentId: a.id })))
+  for (const a of crew) entries.push(...agentSteps(a, "agents"))
   entries.sort((a, b) => a.startedAt - b.startedAt)
 
   const counts: MapBoard["counts"] = {}
@@ -331,18 +316,6 @@ export function buildBoard(s: SessionDetail, agentId: string | null): MapBoard {
     pushed: entries.filter((e) => e.station === "memory" && e.from === "inbound").length,
     faults,
     agents: crew.filter((a) => a.status === "running").length,
-    // Parent rattaché au centre quand il est hors du périmètre affiché
-    crew: crew.map((a) => ({
-      id: a.id,
-      number: a.number,
-      type: a.type ?? "agent",
-      parentId: a.parentId && crew.some((p) => p.id === a.parentId) ? a.parentId : null,
-      status: a.status,
-      startedAt: a.startedAt,
-      endedAt: a.endedAt,
-      tokens: a.tokens,
-      lastTool: a.lastTool ? `${a.lastTool.tool}${a.lastTool.summary ? ` ${a.lastTool.summary}` : ""}` : null,
-    })),
     model: agent ? agent.model : s.model,
     switchedAt: switched?.startedAt,
     core: agent ? `#${agent.number}` : "CLAUDE",
@@ -396,12 +369,12 @@ const LIGHT: Palette = {
 export const paletteOf = (dark: boolean) => (dark ? DARK : LIGHT)
 
 const FONT = 'font-family="ui-monospace, SF Mono, Menlo, monospace"'
-export const PULSE_MS = 800
-export const RIPPLE_MS = 450
-export const GLOW_MS = 3200
-export const ALARM_MS = 6000
-export const SWITCH_MS = 8000
-export const DONE_MS = 1100
+const PULSE_MS = 800
+const RIPPLE_MS = 450
+const GLOW_MS = 3200
+const ALARM_MS = 6000
+const SWITCH_MS = 8000
+const DONE_MS = 1100
 const TRAIL_STOPS = 7
 
 type Point = { x: number; y: number }
@@ -429,10 +402,11 @@ function aside(a: Point, b: Point, off: number): [Point, Point] {
   ]
 }
 
-function pulse(a: Point, b: Point, color: string, age: number, radius: number, isHollow = false) {
+// isSingle : un seul point au lieu de la comète de trois
+function pulse(a: Point, b: Point, color: string, age: number, radius: number, isHollow = false, isSingle = false) {
   const path = `M${n1(a.x)} ${n1(a.y)}L${n1(b.x)} ${n1(b.y)}`
   let out = ""
-  for (let k = isHollow ? 0 : 2; k >= 0; k--) {
+  for (let k = isHollow || isSingle ? 0 : 2; k >= 0; k--) {
     const timing = `begin="${clock(k * 45 - age)}" dur="${clock(PULSE_MS)}" fill="freeze"`
     const peak = n1(1 - 0.36 * k)
     const paint = isHollow ? `fill="none" stroke="${color}" stroke-width="1.4"` : `fill="${color}"`
@@ -461,7 +435,7 @@ function beam(a: Point, b: Point, color: string, age: number, isDashed: boolean)
   )
 }
 
-export const BEND = [0.5, 0.5, 0.4, 0.45, 0.55, 0.75]
+const BEND = [0.5, 0.5, 0.4, 0.45, 0.55, 0.75]
 
 function leg(i: number, j: number) {
   const n = STATIONS.length
@@ -474,7 +448,7 @@ function leg(i: number, j: number) {
 }
 
 // Stations traversées par le fil du centre, sans le modèle (sinon chaque trajet passerait par lui)
-export function routeOf(entries: Entry[]) {
+function routeOf(entries: Entry[]) {
   const stops: { station: StationId; at: number }[] = []
   for (const e of entries) {
     if (e.from === "agents" || e.station === "model") continue
@@ -507,8 +481,7 @@ function trail(entries: Entry[], now: number, c: Palette) {
   return out
 }
 
-function station(s: (typeof STATIONS)[number], i: number, entries: Entry[], board: MapBoard, now: number, c: Palette, selected: boolean) {
-  const p = place(i)
+function station(s: (typeof STATIONS)[number], p: Point, entries: Entry[], board: MapBoard, now: number, c: Palette, selected: boolean) {
   const x = n1(p.x)
   const y = n1(p.y)
   const count = board.counts[s.id] ?? 0
@@ -608,18 +581,14 @@ export function drawMap(board: MapBoard, now: number, c: Palette, motion: boolea
     body += `<ellipse cx="${CX}" cy="${CY}" rx="${rx}" ry="${ry}" fill="none" stroke="${c.line}" stroke-width=".7" opacity=".45" stroke-dasharray="2 5"/>`
   }
 
-  // Un rayon s'use avec l'usage de sa station
-  STATIONS.forEach((s, i) => {
+  STATIONS.forEach((_, i) => {
     const p = place(i)
     const a = edge(core, p, HUB)
     const b = edge(p, core, NODE)
-    const worn = Math.min(1, Math.log2(1 + (board.counts[s.id] ?? 0)) / 7)
-    const line = `<line x1="${n1(a.x)}" y1="${n1(a.y)}" x2="${n1(b.x)}" y2="${n1(b.y)}" stroke-width="${n1(1 + 2.6 * worn)}" stroke-linecap="round"`
-    body += `${line} stroke="${c.spoke}"/>`
-    if (worn > 0) body += `${line} stroke="${s.id === "memory" ? c.mem : c.accent}" opacity="${n1(worn * 0.55)}"/>`
+    body += `<line x1="${n1(a.x)}" y1="${n1(a.y)}" x2="${n1(b.x)}" y2="${n1(b.y)}" stroke-width="1.4" stroke-linecap="round" stroke="${c.spoke}"/>`
   })
 
-  const drawn = STATIONS.map((s, i) => station(s, i, recent, board, now, c, s.id === selected))
+  const drawn = STATIONS.map((s, i) => station(s, place(i), recent, board, now, c, s.id === selected))
   body += drawn.map((d) => d.under).join("")
   body += trail(recent, now, c)
 
@@ -713,6 +682,130 @@ export function drawMap(board: MapBoard, now: number, c: Palette, motion: boolea
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-hidden="true">${body}</svg>`
 }
 
+// --- Arbre de l'accueil : Toi en haut, les sessions au milieu, les stations partagées en bas ---
+
+export type TreeSession = { id: string; number: number; label: string; project: string; host: string; status: "running" | "attention" | "idle"; agents: number }
+
+const TREE_H = 440
+const TREE_YOU = 52
+const TREE_SESSION = 200
+const TREE_STATION = 352
+const BOX_H = 44
+
+export function drawTree(board: MapBoard, sessions: TreeSession[], now: number, c: Palette, motion: boolean, selected: StationId | null = null): string {
+  const tools = STATIONS.filter((s) => s.id !== "you")
+  const w = Math.max(720, sessions.length * 110)
+  const you: Point = { x: w / 2, y: TREE_YOU }
+  const stationAt = new Map(tools.map((s, k) => [s.id, { x: (w * (k + 0.5)) / tools.length, y: TREE_STATION }]))
+  stationAt.set("you", you)
+  const sessionAt = new Map(sessions.map((s, k) => [s.id, { x: (w * (k + 0.5)) / sessions.length, y: TREE_SESSION }]))
+  const boxW = Math.min(170, w / Math.max(1, sessions.length) - 28)
+  // Les liens partent du haut du rectangle (vers Toi) et du bas (vers les stations)
+  const top = (p: Point): Point => ({ x: p.x, y: p.y - BOX_H / 2 })
+  const bottom = (p: Point): Point => ({ x: p.x, y: p.y + BOX_H / 2 })
+  const recent = board.entries.filter((e) => e.hub && sessionAt.has(e.hub)).slice(-60)
+  const live = motion ? recent : []
+  const tone = (e: Entry) => (e.station === "memory" ? [c.mem, c.memHot] : [c.accent, c.hot])
+  const attention = (h: TreeSession) => h.status === "attention"
+
+  let body = `<rect width="${w}" height="${TREE_H}" rx="12" fill="${c.ground}"/>`
+
+  // Machines : nom au-dessus de leurs sessions, accolade discrète
+  const hosts = [...new Set(sessions.map((s) => s.host))]
+  for (const host of hosts) {
+    const xs = sessions.filter((s) => s.host === host).map((s) => sessionAt.get(s.id)!.x)
+    const [x1, x2] = [Math.min(...xs) - boxW / 2, Math.max(...xs) + boxW / 2]
+    const y = TREE_SESSION - BOX_H / 2 - 22
+    body +=
+      `<path d="M${n1(x1)} ${y + 6}v-6h${n1(x2 - x1)}v6" fill="none" stroke="${c.line}" stroke-width=".8"/>` +
+      `<text x="${n1((x1 + x2) / 2)}" y="${y - 5}" text-anchor="middle" ${FONT} font-size="10" fill="${c.dim}">${escapeXml(host)}</text>`
+  }
+
+  // Toi relié à chaque session, en ambre quand elle t'attend
+  for (const h of sessions) {
+    const p = sessionAt.get(h.id)!
+    const b = top(p)
+    const a = edge(you, b, NODE)
+    const line = `<line x1="${n1(a.x)}" y1="${n1(a.y)}" x2="${n1(b.x)}" y2="${n1(b.y)}"`
+    body += attention(h)
+      ? `${line} style="stroke:var(--attention)" stroke-width="1.6" stroke-dasharray="4 4">${motion ? `<animate attributeName="stroke-dashoffset" values="8;0" dur="0.8s" repeatCount="indefinite"/>` : ""}</line>`
+      : `${line} stroke="${c.line}" stroke-width="1"/>`
+  }
+
+  // Chaque session reliée à chaque station
+  for (const h of sessions) {
+    const a = bottom(sessionAt.get(h.id)!)
+    for (const t of tools) {
+      const b = edge(stationAt.get(t.id)!, a, NODE)
+      body += `<line x1="${n1(a.x)}" y1="${n1(a.y)}" x2="${n1(b.x)}" y2="${n1(b.y)}" stroke-width="1" stroke-linecap="round" stroke="${c.spoke}"/>`
+    }
+  }
+
+  const drawn = STATIONS.map((s) => station(s, stationAt.get(s.id)!, recent, board, now, c, s.id === selected))
+  body += drawn.map((d) => d.under).join("")
+
+  const ends = (e: Entry): [Point, Point] => {
+    const p = sessionAt.get(e.hub!)!
+    const a = e.station === "you" ? top(p) : bottom(p)
+    return [a, edge(stationAt.get(e.station)!, a, NODE)]
+  }
+  const lane = (list: Entry[], e: Entry) => {
+    const peers = list.filter((x) => x.station === e.station && x.hub === e.hub)
+    return (peers.indexOf(e) - (peers.length - 1) / 2) * 5
+  }
+  const flights = live.filter((e) => now - e.startedAt < PULSE_MS + RIPPLE_MS).slice(-20)
+  const returns = live.filter((e) => e.endedAt !== undefined && e.from !== "inbound" && e.mark === undefined && e.station !== "you" && now - e.endedAt < PULSE_MS + RIPPLE_MS).slice(-20)
+  for (const e of flights) {
+    const [a, b] = aside(...ends(e), lane(flights, e))
+    const age = now - e.startedAt
+    const color = e.status === "block" ? c.red : tone(e)[1]
+    if (e.from === "inbound") body += pulse(b, a, color, age, 3.8, true) + ripple(e.station === "you" ? top(sessionAt.get(e.hub!)!) : bottom(sessionAt.get(e.hub!)!), 4, color, age)
+    else body += pulse(a, b, color, age, 3.8, false, true) + ripple(stationAt.get(e.station)!, NODE, color, age)
+  }
+  for (const e of returns) {
+    const [a, b] = aside(...ends(e), lane(returns, e))
+    body += pulse(b, a, e.status === "ok" ? c.ash : c.red, now - e.endedAt!, 2.6, false, true)
+  }
+
+  body += drawn.map((d) => d.over).join("")
+
+  for (const h of sessions) body += sessionNode(h, sessionAt.get(h.id)!, boxW, now, c, motion)
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${TREE_H}" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-hidden="true">${body}</svg>`
+}
+
+// Rectangle d'une session : titre et projet à l'intérieur, contour selon son état, sous-agents en cours dans un badge
+function sessionNode(h: TreeSession, p: Point, boxW: number, now: number, c: Palette, motion: boolean) {
+  const stroke = h.status === "running" ? `stroke="${c.accent}"` : h.status === "attention" ? 'style="stroke:var(--attention)"' : `stroke="${c.line}"`
+  const fit = (t: string, size: number) => {
+    const max = Math.max(4, Math.floor((boxW - 16) / (size * 0.62)))
+    return t.length > max ? `${t.slice(0, max - 1)}…` : t
+  }
+  const x = n1(p.x - boxW / 2)
+  const y = n1(p.y - BOX_H / 2)
+  const box = `x="${x}" y="${y}" width="${n1(boxW)}" height="${BOX_H}" rx="10"`
+  let out = `<rect x="${n1(p.x - boxW / 2 - 6)}" y="${n1(p.y - BOX_H / 2 - 6)}" width="${n1(boxW + 12)}" height="${BOX_H + 12}" rx="14" fill="${c.ground}" fill-opacity="0"/>`
+  if (h.status !== "idle" && motion) {
+    const breath = `begin="${clock(-(now % 1600))}" dur="1.6s" repeatCount="indefinite"`
+    out +=
+      `<rect ${box} fill="none" ${stroke} stroke-width="1" opacity="0">` +
+      `<animate attributeName="stroke-width" values="1;9;1" ${breath}/>` +
+      `<animate attributeName="opacity" values=".45;0;.45" ${breath}/></rect>`
+  }
+  out +=
+    `<rect ${box} fill="${c.raised}" ${stroke} stroke-width="1.6"/>` +
+    `<text x="${n1(p.x)}" y="${n1(p.y - 3)}" text-anchor="middle" ${FONT} font-size="11" font-weight="600" fill="${c.bone}" pointer-events="none">${escapeXml(fit(h.label, 11))}</text>` +
+    `<text x="${n1(p.x)}" y="${n1(p.y + 12)}" text-anchor="middle" ${FONT} font-size="9.5" fill="${c.ash}" pointer-events="none">${escapeXml(fit(h.project, 9.5))}</text>`
+  if (h.agents > 0) {
+    const bx = p.x + boxW / 2 - 2
+    const by = p.y - BOX_H / 2 + 2
+    out +=
+      `<circle cx="${n1(bx)}" cy="${n1(by)}" r="8" fill="${c.raised}" stroke="${c.hot}" stroke-width="1"/>` +
+      `<text x="${n1(bx)}" y="${n1(by + 3)}" text-anchor="middle" ${FONT} font-size="8.5" fill="${c.hot}" pointer-events="none">+${h.agents}</text>`
+  }
+  return `<g data-hub="${escapeXml(h.id)}" style="cursor:pointer">${out}</g>`
+}
+
 function escapeXml(text: string) {
   return text.replace(/[<>&"]/g, (ch) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" })[ch]!)
 }
@@ -748,48 +841,7 @@ export function describeNow(board: MapBoard) {
   return `${STATION_NAME[top.station]} : ${top.label}${running.length > 1 ? ` et ${running.length - 1} de plus` : ""}`
 }
 
-// --- Relecture, usure du projet, détail d'une station ---
-
-// Le tableau tel qu'il était à l'instant t : ce qui a commencé, avec ce qui n'était pas fini encore en cours
-export function boardAt(board: MapBoard, t: number): MapBoard {
-  const entries = board.entries
-    .filter((e) => e.startedAt <= t)
-    .map((e) => (e.endedAt !== undefined && e.endedAt > t ? { ...e, status: "run" as const, endedAt: undefined } : e))
-  const counts: MapBoard["counts"] = {}
-  for (const e of entries) counts[e.station] = (counts[e.station] ?? 0) + 1
-  const lastPrompt = entries.findLast((e) => e.station === "you" && e.from === "inbound")?.startedAt ?? 0
-  const faults: MapBoard["faults"] = {}
-  for (const e of entries) if ((e.status === "err" || e.status === "block") && e.startedAt >= lastPrompt) faults[e.station] = (faults[e.station] ?? 0) + 1
-  const crew = board.crew
-    .filter((m) => m.startedAt <= t)
-    .map((m) => (m.endedAt != null && m.endedAt > t ? { ...m, status: "running" as const, endedAt: null } : m))
-  return {
-    ...board,
-    entries,
-    counts,
-    faults,
-    pushed: entries.filter((e) => e.station === "memory" && e.from === "inbound").length,
-    crew,
-    agents: crew.filter((m) => m.status === "running").length,
-    switchedAt: entries.findLast((e) => e.mark === "switch")?.startedAt,
-  }
-}
-
-// Compteurs par station à partir des clés d'usage du serveur (outil, têtes de commandes, marqueur mémoire)
-export function countsFromUsage(usage: Record<string, number>): MapBoard["counts"] {
-  const counts: MapBoard["counts"] = {}
-  for (const [key, n] of Object.entries(usage)) {
-    const mem = key.endsWith(":mem")
-    const raw = mem ? key.slice(0, -4) : key
-    const memPath = "/.claude/rules/x"
-    let station: StationId
-    if (raw.startsWith("Bash:")) station = classify("Bash", { command: raw.slice(5).split("|").join(" ; ") + (mem ? ` ${memPath}` : "") }).station
-    else if (raw === "autre") station = "shell"
-    else station = classify(raw, { file_path: mem ? memPath : "x" }).station
-    counts[station] = (counts[station] ?? 0) + n
-  }
-  return counts
-}
+// --- Détail d'une station ---
 
 // Ce qu'une station a le plus servi, pour l'infobulle
 export function topLabels(entries: Entry[], station: StationId, max = 5) {
