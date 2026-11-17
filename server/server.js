@@ -184,9 +184,45 @@ function recordApiRequest(a, at) {
   s.usage ??= { ...emptyUsage(), models: {} };
   addUsage(s.usage, u);
   addUsage((s.usage.models[model] ??= emptyUsage()), u);
-  // Taille du contexte envoyé à la dernière requête
-  s.usage.last = { at, model, context: u.input + u.cacheRead + u.cacheCreation };
+  // Contexte envoyé à la requête : fil principal ou sous-agent, les requêtes annexes (titre, compactage, mode auto...) sont ignorées
+  const context = { at, model, tokens: u.input + u.cacheRead + u.cacheCreation };
+  const source = String(a.query_source ?? '');
+  if (a.agent_id) {
+    const agent = s.agents[a.agent_id];
+    if (agent) agent.context = context;
+  } else if (!source || source === 'sdk' || source.startsWith('repl_main_thread')) s.context = context;
   return s.id;
+}
+
+// --- Status line : limites de l'abonnement et taille exacte de la fenêtre de contexte ---
+const limitOf = (w) => (w && Number.isFinite(Number(w.used_percentage)) ? { pct: Number(w.used_percentage), resetsAt: Number(w.resets_at) * 1000 || null } : null);
+const sameJson = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+// Renvoie true si l'affichage change
+function handleStatusLine(body, host, now) {
+  let dirty = false;
+  const fiveHour = limitOf(body?.rate_limits?.five_hour);
+  const sevenDay = limitOf(body?.rate_limits?.seven_day);
+  if (fiveHour || sevenDay) {
+    const next = { fiveHour: fiveHour ?? state.limits?.fiveHour ?? null, sevenDay: sevenDay ?? state.limits?.sevenDay ?? null };
+    if (!sameJson(next, { fiveHour: state.limits?.fiveHour ?? null, sevenDay: state.limits?.sevenDay ?? null })) dirty = true;
+    state.limits = { ...next, at: now, host };
+  }
+  const s = state.sessions[body?.session_id];
+  const cw = body?.context_window;
+  if (s && cw) {
+    const window = count(cw.context_window_size) || null;
+    const tokens = count(cw.total_input_tokens);
+    if (window && window !== s.contextWindow) {
+      s.contextWindow = window;
+      dirty = true;
+    }
+    if (tokens && tokens !== s.context?.tokens) {
+      s.context = { at: now, model: String(body.model?.id || s.model || 'inconnu').slice(0, 80), tokens };
+      dirty = true;
+    }
+  }
+  return { dirty, sessionId: s ? s.id : null };
 }
 
 function handleOtelLogs(body) {
@@ -598,6 +634,7 @@ function handle(e, host) {
       push(thread, { kind: 'notice', hook: e.hook_event_name, text: `Compactage du contexte (${e.trigger === 'manual' ? 'manuel' : 'auto'})` });
       break;
     case 'PostCompact':
+      if (!sub) s.compactions = (s.compactions ?? 0) + 1;
       push(thread, { kind: 'notice', hook: e.hook_event_name, text: 'Contexte compacté' });
       break;
     case 'PostModelSwitch':
@@ -755,6 +792,15 @@ async function api(req, res, pathname) {
     return res.end();
   }
 
+  if (parts[1] === 'statusline' && parts.length === 2) {
+    if (req.method !== 'POST') return json(res, 405, { error: 'method not allowed' });
+    if (HOOK_TOKEN && req.headers['x-hook-token'] !== HOOK_TOKEN) return json(res, 401, { error: 'bad token' });
+    const { dirty, sessionId } = handleStatusLine(JSON.parse(await readBody(req)), hostOf(req), Date.now());
+    if (dirty) changed(sessionId);
+    res.writeHead(204, SECURITY_HEADERS);
+    return res.end();
+  }
+
   if (parts[1] === 'stream' && parts.length === 2 && req.method === 'GET') return stream(req, res);
 
   if (parts[1] === 'galaxy' && parts.length === 2 && req.method === 'GET') {
@@ -786,7 +832,7 @@ async function api(req, res, pathname) {
       const sessions = Object.values(state.sessions)
         .sort((a, b) => b.lastSeen - a.lastSeen)
         .map(summaryOf);
-      return json(res, 200, { version, now: Date.now(), settings: state.settings, sessions });
+      return json(res, 200, { version, now: Date.now(), settings: state.settings, limits: state.limits ?? null, sessions });
     }
     if (parts.length === 2 && req.method === 'DELETE') {
       const now = Date.now();
@@ -913,6 +959,8 @@ for (const signal of ['SIGTERM', 'SIGINT']) {
   // Usure par projet des anciennes versions, plus utilisée
   delete state.usage;
   delete state.usageBackfilled;
+  // Dernier contexte mélangeant fil principal et sous-agents, remplacé par s.context
+  for (const s of Object.values(state.sessions)) delete s.usage?.last;
   // Activité reconstituée depuis les journaux encore en mémoire, la première fois
   if (backfill) {
     state.activity = {};

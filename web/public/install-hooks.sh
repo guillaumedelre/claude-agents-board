@@ -100,6 +100,47 @@ if uninstall != "1":
 if not env:
     cfg.pop("env")
 
+# Status line : ses données (limites de l'abonnement, taille de la fenêtre de contexte) partent aussi vers le tableau.
+# Un script enveloppe les envoie puis lance la status line d'origine, gardée à côté pour la désinstallation.
+base = os.path.dirname(path)
+wrapper = os.path.join(base, "agents-statusline.sh")
+saved = os.path.join(base, "agents-statusline.orig.json")
+status = cfg.get("statusLine")
+wrapped = isinstance(status, dict) and "agents-statusline.sh" in status.get("command", "")
+original = None
+if wrapped:
+    if os.path.exists(saved):
+        with open(saved, encoding="utf-8") as f:
+            original = json.load(f)
+elif status:
+    original = status
+if uninstall == "1":
+    if wrapped:
+        if original:
+            cfg["statusLine"] = original
+        else:
+            cfg.pop("statusLine", None)
+    for f in (wrapper, saved):
+        if os.path.exists(f):
+            os.remove(f)
+else:
+    run = ""
+    if original and original.get("type") == "command" and original.get("command"):
+        quoted = original["command"].replace("'", "'\\''")
+        run = f"printf '%s' \"$input\" | sh -c '{quoted}'\n"
+    with open(wrapper, "w", encoding="utf-8") as f:
+        f.write("#!/bin/sh\n# Généré par install-hooks.sh (tableau Agents) : envoie l'entrée de la status line au tableau, puis lance la status line d'origine.\n")
+        f.write("input=$(cat)\n")
+        f.write(f"printf '%s' \"$input\" | curl -s -o /dev/null -m 2 -H \"Content-Type: application/json\" -H \"X-Agent-Host: {host}\"{token_header} --data-binary @- {url}/api/statusline >/dev/null 2>&1 &\n")
+        f.write(run)
+    os.chmod(wrapper, 0o755)
+    with open(saved, "w", encoding="utf-8") as f:
+        json.dump(original, f, indent=2, ensure_ascii=False)
+    cfg["statusLine"] = {**(original or {"type": "command"}), "type": "command", "command": f"sh \"{wrapper}\""}
+    if not original or original.get("type") != "command":
+        cfg["statusLine"].setdefault("refreshInterval", 60)
+    print("Status line : limites de l'abonnement (semaine, 5 h) et fenêtre de contexte envoyées au tableau" + (", status line d'origine conservée." if run else "."))
+
 tmp = path + ".tmp"
 with open(tmp, "w", encoding="utf-8") as f:
     json.dump(cfg, f, indent=2, ensure_ascii=False)

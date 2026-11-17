@@ -1,6 +1,7 @@
 // Carte du travail adaptée de lot-map (https://github.com/alexeyw/lot-map).
 // Copyright (c) 2026 Aleksei Volodin, licence MIT : https://github.com/alexeyw/lot-map/blob/main/LICENSE
 import type { BoardEvent, SessionDetail } from "@/lib/types"
+import { contextWindow, tokens, usd } from "@/lib/format"
 
 export type StationId = "you" | "model" | "memory" | "files" | "shell" | "web" | "browser" | "agents" | "skills" | "hooks"
 type Status = "run" | "ok" | "err" | "block"
@@ -27,6 +28,7 @@ export type MapBoard = {
   model: string | null
   switchedAt?: number
   core: string
+  context?: { tokens: number; window: number }
 }
 
 const ring = (x: number, y: number, r: number) => `M${x - r} ${y}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0`
@@ -309,6 +311,7 @@ export function buildBoard(s: SessionDetail, agentId: string | null): MapBoard {
   const faults: MapBoard["faults"] = {}
   for (const e of entries) if ((e.status === "err" || e.status === "block") && e.startedAt >= lastPrompt) faults[e.station] = (faults[e.station] ?? 0) + 1
   const switched = entries.findLast((e) => e.mark === "switch")
+  const ctx = agent ? agent.context : s.context
 
   return {
     entries,
@@ -319,6 +322,7 @@ export function buildBoard(s: SessionDetail, agentId: string | null): MapBoard {
     model: agent ? agent.model : s.model,
     switchedAt: switched?.startedAt,
     core: agent ? `#${agent.number}` : "CLAUDE",
+    context: ctx && { tokens: ctx.tokens, window: (!agent && s.contextWindow) || contextWindow(ctx.model, ctx.tokens) },
   }
 }
 
@@ -369,6 +373,7 @@ const LIGHT: Palette = {
 export const paletteOf = (dark: boolean) => (dark ? DARK : LIGHT)
 
 const FONT = 'font-family="ui-monospace, SF Mono, Menlo, monospace"'
+const contextColor = (ratio: number, c: Palette) => (ratio >= 0.85 ? c.red : ratio >= 0.6 ? c.hot : c.mem)
 const PULSE_MS = 800
 const RIPPLE_MS = 450
 const GLOW_MS = 3200
@@ -648,6 +653,20 @@ export function drawMap(board: MapBoard, now: number, c: Palette, motion: boolea
     `</circle>` +
     `<circle data-core="1" style="cursor:pointer" cx="${CX}" cy="${CY}" r="${CORE}" fill="${c.raised}" stroke="${anyRunning ? c.accent : c.line}" stroke-width="1.3"/>`
 
+  // Jauge du contexte autour du centre, depuis midi dans le sens horaire
+  if (board.context) {
+    const { tokens: used, window } = board.context
+    const ratio = Math.min(1, used / window)
+    const r = CORE + 4
+    const len = 2 * Math.PI * r
+    const color = contextColor(ratio, c)
+    body +=
+      `<g transform="rotate(-90 ${CX} ${CY})"><title>Contexte : ${tokens(used)} / ${tokens(window)} tokens (${Math.round(100 * ratio)} %)</title>` +
+      `<circle cx="${CX}" cy="${CY}" r="${r}" fill="none" stroke="${c.spoke}" stroke-width="3"/>` +
+      `<circle cx="${CX}" cy="${CY}" r="${r}" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round" stroke-dasharray="${n1(ratio * len)} ${n1(len)}"/></g>` +
+      `<text x="${CX}" y="${CY - 17}" text-anchor="middle" ${FONT} font-size="9" fill="${color}" pointer-events="none">${Math.round(100 * ratio)} %</text>`
+  }
+
   const switchAge = board.switchedAt === undefined ? Infinity : now - board.switchedAt
   const isSwitching = switchAge >= 0 && switchAge < SWITCH_MS
   const model = shortModel(board.model)
@@ -684,13 +703,43 @@ export function drawMap(board: MapBoard, now: number, c: Palette, motion: boolea
 
 // --- Arbre de l'accueil : Toi en haut, les sessions au milieu, les stations partagées en bas ---
 
-export type TreeSession = { id: string; number: number; label: string; project: string; host: string; status: "running" | "attention" | "idle"; agents: number }
+export type TreeSession = {
+  id: string
+  number: number
+  label: string
+  project: string
+  host: string
+  status: "running" | "attention" | "idle"
+  activity: { text: string; since: number }
+  lastSeen: number
+  context?: { tokens: number; window: number }
+  compactions: number
+  cost: number | null
+  crew: (number | null)[] // contexte de chaque sous-agent en cours, en fraction de sa fenêtre
+}
 
 const TREE_H = 440
 const TREE_YOU = 52
 const TREE_SESSION = 200
 const TREE_STATION = 352
-const BOX_H = 44
+const BOX_H = 76
+const FADE_FROM = 5 * 60e3
+const FADE_TO = 60 * 60e3
+
+// Ce que fait la session, pour son rectangle : outil en cours, réflexion, attente ou inactivité
+export function sessionActivity(board: MapBoard, status: TreeSession["status"], turnStart: number | null, lastSeen: number): TreeSession["activity"] {
+  if (status === "attention") return { text: "t'attend", since: lastSeen }
+  if (status === "idle") return { text: "inactive", since: lastSeen }
+  const top = board.entries.filter((e) => e.status === "run" && e.station !== "you" && e.station !== "model").at(-1)
+  if (top) return { text: `${STATION_NAME[top.station]} : ${top.label}`, since: top.startedAt }
+  return { text: "réfléchit", since: turnStart ?? lastSeen }
+}
+
+const span = (ms: number) => {
+  const s = Math.max(0, Math.floor(ms / 1000))
+  if (s < 3600) return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`
+  return `${Math.floor(s / 3600)} h ${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}`
+}
 
 export function drawTree(board: MapBoard, sessions: TreeSession[], now: number, c: Palette, motion: boolean, selected: StationId | null = null): string {
   const tools = STATIONS.filter((s) => s.id !== "you")
@@ -774,17 +823,18 @@ export function drawTree(board: MapBoard, sessions: TreeSession[], now: number, 
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${TREE_H}" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-hidden="true">${body}</svg>`
 }
 
-// Rectangle d'une session : titre et projet à l'intérieur, contour selon son état, sous-agents en cours dans un badge
+// Rectangle d'une session : titre, projet, activité, contexte, compactages et coût ; sous-agents en pastilles sur le bord haut
 function sessionNode(h: TreeSession, p: Point, boxW: number, now: number, c: Palette, motion: boolean) {
   const stroke = h.status === "running" ? `stroke="${c.accent}"` : h.status === "attention" ? 'style="stroke:var(--attention)"' : `stroke="${c.line}"`
-  const fit = (t: string, size: number) => {
-    const max = Math.max(4, Math.floor((boxW - 16) / (size * 0.62)))
+  const fit = (t: string, size: number, width = boxW - 16) => {
+    const max = Math.max(4, Math.floor(width / (size * 0.62)))
     return t.length > max ? `${t.slice(0, max - 1)}…` : t
   }
-  const x = n1(p.x - boxW / 2)
-  const y = n1(p.y - BOX_H / 2)
-  const box = `x="${x}" y="${y}" width="${n1(boxW)}" height="${BOX_H}" rx="10"`
-  let out = `<rect x="${n1(p.x - boxW / 2 - 6)}" y="${n1(p.y - BOX_H / 2 - 6)}" width="${n1(boxW + 12)}" height="${BOX_H + 12}" rx="14" fill="${c.ground}" fill-opacity="0"/>`
+  const left = p.x - boxW / 2
+  const right = p.x + boxW / 2
+  const topY = p.y - BOX_H / 2
+  const box = `x="${n1(left)}" y="${n1(topY)}" width="${n1(boxW)}" height="${BOX_H}" rx="10"`
+  let out = `<rect x="${n1(left - 6)}" y="${n1(topY - 6)}" width="${n1(boxW + 12)}" height="${BOX_H + 12}" rx="14" fill="${c.ground}" fill-opacity="0"/>`
   if (h.status !== "idle" && motion) {
     const breath = `begin="${clock(-(now % 1600))}" dur="1.6s" repeatCount="indefinite"`
     out +=
@@ -792,18 +842,48 @@ function sessionNode(h: TreeSession, p: Point, boxW: number, now: number, c: Pal
       `<animate attributeName="stroke-width" values="1;9;1" ${breath}/>` +
       `<animate attributeName="opacity" values=".45;0;.45" ${breath}/></rect>`
   }
+  const text = (y: number, size: number, fill: string, content: string, anchor = "middle", x = p.x, extra = "") =>
+    `<text x="${n1(x)}" y="${n1(y)}" text-anchor="${anchor}" ${FONT} font-size="${size}" ${fill} ${extra} pointer-events="none">${escapeXml(content)}</text>`
+  const activityFill = h.status === "running" ? `fill="${c.accent}"` : h.status === "attention" ? 'style="fill:var(--attention)"' : `fill="${c.dim}"`
   out +=
     `<rect ${box} fill="${c.raised}" ${stroke} stroke-width="1.6"/>` +
-    `<text x="${n1(p.x)}" y="${n1(p.y - 3)}" text-anchor="middle" ${FONT} font-size="11" font-weight="600" fill="${c.bone}" pointer-events="none">${escapeXml(fit(h.label, 11))}</text>` +
-    `<text x="${n1(p.x)}" y="${n1(p.y + 12)}" text-anchor="middle" ${FONT} font-size="9.5" fill="${c.ash}" pointer-events="none">${escapeXml(fit(h.project, 9.5))}</text>`
-  if (h.agents > 0) {
-    const bx = p.x + boxW / 2 - 2
-    const by = p.y - BOX_H / 2 + 2
+    text(p.y - 19, 11, `fill="${c.bone}"`, fit(h.label, 11), "middle", p.x, 'font-weight="600"') +
+    text(p.y - 5, 9.5, `fill="${c.ash}"`, fit(h.project, 9.5)) +
+    text(p.y + 9, 9, activityFill, fit(`${h.activity.text} · ${span(now - h.activity.since)}`, 9))
+
+  // Bas du rectangle : barre de contexte, puis pourcentage à gauche, compactages et coût à droite
+  const barX = left + 10
+  const barW = boxW - 20
+  const barY = p.y + 16
+  out += `<rect x="${n1(barX)}" y="${n1(barY)}" width="${n1(barW)}" height="3" rx="1.5" fill="${c.spoke}"/>`
+  if (h.context) {
+    const ratio = Math.min(1, h.context.tokens / h.context.window)
+    const color = contextColor(ratio, c)
     out +=
-      `<circle cx="${n1(bx)}" cy="${n1(by)}" r="8" fill="${c.raised}" stroke="${c.hot}" stroke-width="1"/>` +
-      `<text x="${n1(bx)}" y="${n1(by + 3)}" text-anchor="middle" ${FONT} font-size="8.5" fill="${c.hot}" pointer-events="none">+${h.agents}</text>`
+      `<rect x="${n1(barX)}" y="${n1(barY)}" width="${n1(Math.max(3, barW * ratio))}" height="3" rx="1.5" fill="${color}"><title>Contexte : ${tokens(h.context.tokens)} / ${tokens(h.context.window)} tokens</title></rect>` +
+      text(p.y + 30, 8.5, `fill="${color}"`, `ctx ${Math.round(100 * ratio)} %`, "start", barX)
   }
-  return `<g data-hub="${escapeXml(h.id)}" style="cursor:pointer">${out}</g>`
+  const tail = [h.compactions > 0 ? `⟲${h.compactions}` : "", h.cost != null ? usd(h.cost) : ""].filter(Boolean).join(" · ")
+  if (tail) out += text(p.y + 30, 8.5, `fill="${c.ash}"`, tail, "end", right - 10)
+
+  // Sous-agents en cours : une pastille chacun, avec la jauge de son contexte
+  const shown = h.crew.slice(0, 5)
+  shown.forEach((ratio, k) => {
+    const cx = right - 10 - k * 15
+    const r = 5.5
+    const len = 2 * Math.PI * r
+    out += `<circle cx="${n1(cx)}" cy="${n1(topY)}" r="${r}" fill="${c.raised}" stroke="${c.spoke}" stroke-width="2"/>`
+    out +=
+      ratio == null
+        ? `<circle cx="${n1(cx)}" cy="${n1(topY)}" r="${r}" fill="none" stroke="${c.hot}" stroke-width="1"/>`
+        : `<circle cx="${n1(cx)}" cy="${n1(topY)}" r="${r}" fill="none" stroke="${contextColor(ratio, c)}" stroke-width="2" stroke-dasharray="${n1(Math.max(0.5, ratio * len))} ${n1(len)}" transform="rotate(-90 ${n1(cx)} ${n1(topY)})"/>`
+  })
+  if (h.crew.length > shown.length) out += text(topY + 3, 8.5, `fill="${c.hot}"`, `+${h.crew.length - shown.length}`, "end", right - 10 - shown.length * 15)
+
+  // Une session inactive s'estompe peu à peu
+  const idle = h.status === "idle" ? now - h.lastSeen : 0
+  const opacity = idle <= FADE_FROM ? 1 : Math.max(0.45, 1 - (0.55 * (idle - FADE_FROM)) / (FADE_TO - FADE_FROM))
+  return `<g data-hub="${escapeXml(h.id)}" style="cursor:pointer" opacity="${opacity.toFixed(2)}">${out}</g>`
 }
 
 function escapeXml(text: string) {

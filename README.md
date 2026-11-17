@@ -15,6 +15,7 @@ Tableau de bord web, en temps réel, des sessions [Claude Code][claude-code] et 
   - [Accueil](#accueil)
   - [Détail d'une session](#détail-dune-session)
   - [Tokens et coût](#tokens-et-coût)
+  - [Limites de l'abonnement](#limites-de-labonnement)
   - [Barre latérale, statut et nettoyage](#barre-latérale-statut-et-nettoyage)
 - [Architecture](#architecture)
 - [Développement](#développement)
@@ -85,6 +86,7 @@ Windows (PowerShell) :
 
 - ajoute les hooks dans `~/.claude/settings.json` (ou `$CLAUDE_CONFIG_DIR/settings.json`), au niveau utilisateur pour couvrir tous les dossiers ;
 - active la télémétrie OpenTelemetry vers l'application (variables du bloc `env`, voir [Tokens et coût](#tokens-et-coût)), sauf si un exportateur de journaux (`OTEL_LOGS_EXPORTER`) est déjà configuré : il le laisse alors tel quel et le signale ;
+- enveloppe la status line (version sh seulement) : un script `agents-statusline.sh`, généré à côté de `settings.json`, envoie l'entrée de la status line à l'application puis lance la status line d'origine, sauvegardée dans `agents-statusline.orig.json` et remise en place par `--uninstall` (voir [Limites de l'abonnement](#limites-de-labonnement)) ;
 - garde les hooks et réglages déjà présents, ne crée pas de doublon s'il est relancé, et laisse une copie de l'ancien fichier dans `settings.json.bak-agents` ;
 - teste la connexion à l'application et affiche le résultat.
 
@@ -154,7 +156,7 @@ Un arbre en trois étages, en temps réel, pour toutes les sessions ouvertes de 
 | Étage | Contenu |
 |-------|---------|
 | Haut | **Toi**, relié à chaque session : prompts, demandes d'autorisation et réponses passent par ce lien, qui devient un pointillé ambre qui défile quand la session t'attend |
-| Milieu | **Les sessions**, en rectangles arrondis qui portent le titre de la session et le nom du projet, regroupées par machine (nom au-dessus du groupe), de la plus ancienne à la plus récente. Contour orange qui respire quand elle travaille, ambre quand elle t'attend, gris au repos ; badge `+N` pour ses sous-agents en cours |
+| Milieu | **Les sessions**, en rectangles arrondis qui portent le titre de la session et le nom du projet, regroupées par machine (nom au-dessus du groupe), de la plus ancienne à la plus récente. Contour orange qui respire quand elle travaille, ambre quand elle t'attend, gris au repos ; dessous, l'activité en cours avec son chrono (outil, « réfléchit », « t'attend », « inactive »), une barre de contexte (vert d'eau, orange à 60 %, rouge à 85 %) avec son pourcentage, les compactages (`⟲N`) et le coût estimé ; une pastille par sous-agent en cours sur le bord haut, avec la jauge de son propre contexte (au-delà de 5, `+N`) ; une session inactive s'estompe progressivement entre 5 min et 1 h |
 | Bas | **Les stations partagées** (Modèle, Mémoire, Fichiers, Terminal, Réseau, Navigateur, Agents, Skills, Hooks), reliées à chaque session |
 
 - Un appel envoie un point de la session vers la station, puis un autre au retour (gris, ou rouge en cas d'échec).
@@ -232,7 +234,7 @@ Une vue en pixel art de la session : l'agent principal derrière le comptoir d'a
 
 #### Carte
 
-Une carte du travail adaptée de [lot-map][lot-map] : au centre, la session (« CLAUDE ») ou l'agent ouvert (« #N ») avec son modèle ; autour, dix stations. Chaque appel envoie une impulsion du centre vers sa station, puis une autre au retour ; les appels des sous-agents partent de la station Agents.
+Une carte du travail adaptée de [lot-map][lot-map] : au centre, la session (« CLAUDE ») ou l'agent ouvert (« #N ») avec son modèle, entouré d'une jauge du contexte (voir [Tokens et coût](#tokens-et-coût)) ; autour, dix stations. Chaque appel envoie une impulsion du centre vers sa station, puis une autre au retour ; les appels des sous-agents partent de la station Agents.
 
 <details>
 <summary><strong>Ce qui allume chaque station</strong></summary>
@@ -267,7 +269,63 @@ Les hooks ne transmettent pas la consommation : elle vient de la télémétrie [
 - **Par session** : un badge « 3,2 M · 2,75 $ » dans la carte de la barre latérale et dans l'en-tête du détail ; le survol détaille entrée, sortie, cache lu (avec sa part), cache écrit, nombre de requêtes et, s'il y en a plusieurs, chaque modèle.
 - **Sur l'accueil** : la carte « Tokens et coût » de l'onglet Activité, toutes machines confondues.
 - **Coût** : c'est l'estimation de Claude Code au tarif public de l'API. Avec un abonnement, ce n'est pas ce qui est facturé.
-- **Sous-agents** : leurs requêtes sont comptées dans la session, sans répartition par sous-agent (la télémétrie ne donne pas d'identifiant d'instance). Le chiffre affiché dans le détail d'un sous-agent vient de l'outil `Agent` et correspond à sa dernière requête au modèle, pas à son total.
+- **Contexte** : la taille du contexte envoyé à la dernière requête (entrée + cache lu + cache écrit) est gardée pour le fil principal (`query_source` `repl_main_thread` ou `sdk`) et pour chaque sous-agent (`agent_id`, présent depuis Claude Code 2.1) ; les requêtes annexes (titre, compactage, mode auto...) sont ignorées. La carte l'affiche en jauge autour du centre, en pourcentage de la fenêtre du modèle : 200 k pour les modèles 3.x à 4.6 sans suffixe `[1m]`, 1 M sinon (catalogue de Claude Code). Les compactages (`PostCompact`) sont comptés par session.
+- **Sous-agents** : leurs requêtes sont comptées dans la session, sans répartition des tokens et du coût par sous-agent.
+- **Fenêtre exacte** : quand la status line est enveloppée (voir ci-dessous), sa `context_window.context_window_size` remplace la règle 200 k / 1 M pour le fil principal.
+
+### Limites de l'abonnement
+
+Ni les hooks ni la télémétrie ne donnent la consommation de l'abonnement. La [status line][statusline] la reçoit : `rate_limits.seven_day` (semaine) et `rate_limits.five_hour` (fenêtre de 5 h), en pourcentage utilisé avec la date de reset, pour les abonnés Pro et Max, après la première réponse du modèle. Le script `agents-statusline.sh` installé par `install-hooks.sh` envoie cette entrée à `POST /api/statusline`.
+
+- **Affichage** : jauge « Semaine » dans la barre d'état, avec la fenêtre de 5 h à côté ; le survol donne les deux pourcentages, les dates de reset, la machine qui les a envoyés et quand.
+- **Fenêtre expirée** : passée sa date de reset, une fenêtre est affichée à 0 % en attendant la prochaine valeur.
+- **Données gardées** : les deux limites (dernières reçues, communes au compte), la taille de la fenêtre et le contexte de la session. Le reste de l'entrée (dossier, transcript, coût...) est ignoré.
+- **Windows** : `install-hooks.ps1` n'enveloppe pas encore la status line, il faut la brancher à la main (voir ci-dessous).
+
+#### Brancher sa status line à la main
+
+Sans le script, ou sous Windows, il suffit que la commande de status line transmette son entrée standard (le JSON que Claude Code lui donne) à `POST /api/statusline`, puis affiche ce qu'elle veut. Le tableau n'affiche rien de cette commande ; seul compte l'envoi.
+
+1. Écrire le script.
+
+   Linux / macOS, `~/.claude/statusline.sh` :
+
+   ```sh
+   #!/bin/sh
+   input=$(cat)
+   # Envoi en arrière-plan : la status line n'attend pas le réseau
+   printf '%s' "$input" | curl -s -o /dev/null -m 2 \
+     -H "Content-Type: application/json" -H "X-Agent-Host: $(hostname -s)" \
+     --data-binary @- http://agents.10.0.0.10.sslip.io/api/statusline >/dev/null 2>&1 &
+   # Affichage : ici le modèle, à remplacer par sa propre status line (lue depuis "$input")
+   printf '%s' "$input" | jq -r '.model.display_name'
+   ```
+
+   Windows (PowerShell), `%USERPROFILE%\.claude\statusline.ps1` :
+
+   ```powershell
+   $json = [Console]::In.ReadToEnd()
+   try {
+     Invoke-RestMethod -Uri http://agents.10.0.0.10.sslip.io/api/statusline -Method Post -TimeoutSec 2 `
+       -ContentType 'application/json' -Body ([Text.Encoding]::UTF8.GetBytes($json)) `
+       -Headers @{ 'X-Agent-Host' = $env:COMPUTERNAME } | Out-Null
+   } catch {}
+   ($json | ConvertFrom-Json).model.display_name
+   ```
+
+2. La déclarer dans `settings.json` ; `refreshInterval` (en secondes) relance la commande même quand la session ne fait rien, pour que les limites restent à jour :
+
+   ```json
+   "statusLine": { "type": "command", "command": "sh ~/.claude/statusline.sh", "refreshInterval": 60 }
+   ```
+
+   Sous Windows : `"command": "powershell -NoProfile -File C:/Users/<nom>/.claude/statusline.ps1"`.
+
+- Ajouter `-H "X-Hook-Token: <token>"` (ou `'X-Hook-Token' = '<token>'`) si `HOOK_TOKEN` est défini dans le `.env` de la stack.
+- `X-Agent-Host` doit porter le même nom de machine que les hooks.
+- Une status line existante se garde telle quelle : on ajoute juste l'envoi en tête, en relisant ensuite la même entrée (`$input` / `$json`), car l'entrée standard ne se lit qu'une fois.
+- Les limites n'arrivent que pour les abonnés Pro et Max, après la première réponse du modèle ; la [documentation de la status line][statusline] détaille tous les champs reçus.
+- Le script PowerShell n'a pas été testé sous Windows. Le chiffre affiché dans le détail d'un sous-agent vient de l'outil `Agent` et correspond à sa dernière requête au modèle, pas à son total.
 - **Données gardées** : seulement les compteurs. L'événement transporte aussi l'adresse e-mail et les identifiants du compte, que le serveur ignore.
 
 ### Barre latérale, statut et nettoyage
@@ -324,6 +382,7 @@ flowchart LR
 | `GET /api/settings`, `PUT /api/settings` | `{ "autoCleanupMs": 86400000 }` : délai du nettoyage automatique (`0`, 1 h, 24 h ou 7 jours) |
 | `GET /api/galaxy` | Sessions ouvertes, allégées pour l'arbre de l'accueil : 60 derniers événements et 60 derniers tours par fil, sans les sorties d'outils, entrées tronquées à 400 caractères et textes à 120, sous-agents en cours ou terminés depuis moins de 10 minutes, sans tâches ni estimations |
 | `GET /api/activity` | Par heure, sur 8 jours : appels d'outils, prompts (heatmap) et, par modèle, tokens et coût estimé |
+| `POST /api/statusline` | Reçoit l'entrée JSON de la status line (limites de l'abonnement, fenêtre de contexte). Mêmes en-têtes que `/api/hooks` |
 | `POST /v1/logs` | Reçoit la télémétrie OpenTelemetry de Claude Code (OTLP/HTTP en JSON, gzip accepté ; protobuf refusé avec 415). Exige `X-Hook-Token` si `HOOK_TOKEN` est défini |
 | `GET /api/stream` | Flux SSE qui signale chaque changement. `?live=all` pousse aussi, à chaque hook, la session modifiée sous la forme allégée de `/api/galaxy` ; `?live=<id>`, seulement cette session |
 
@@ -399,6 +458,7 @@ Les sprites du Bureau sont extraits par `python3 scripts/office-assets.py <dossi
 [git-for-windows]: https://gitforwindows.org/
 [traefik]: https://traefik.io/traefik/
 [otel-docs]: https://code.claude.com/docs/en/monitoring-usage
+[statusline]: https://code.claude.com/docs/en/statusline
 [vite]: https://vite.dev/
 [tailwind]: https://tailwindcss.com/
 [shadcn]: https://ui.shadcn.com/

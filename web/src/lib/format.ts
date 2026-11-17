@@ -29,6 +29,10 @@ export const usd = (n: number) => (n > 0 && n < 0.01 ? "< 0,01 $" : `${n.toLocal
 
 export const totalTokens = (u: { input: number; output: number; cacheRead: number; cacheCreation: number }) => u.input + u.output + u.cacheRead + u.cacheCreation
 
+// Fenêtre de contexte : 200 k pour les modèles 3.x à 4.6 sans suffixe [1m], 1 M ensuite (catalogue de Claude Code 2.1)
+export const contextWindow = (model: string | null, used: number) =>
+  used <= 200_000 && model && !model.includes("[1m]") && /^claude-3|-4(-[0-6])?(-\d{8})?$/.test(model) ? 200_000 : 1_000_000
+
 export const shortModel = (m: string | null) => (m ? m.replace(/^claude-/, "").replace(/\[.*\]$/, "") : null)
 
 // Nom stable : celui donné à la main, sinon le numéro attribué à l'arrivée de la session

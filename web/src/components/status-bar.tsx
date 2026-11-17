@@ -1,9 +1,11 @@
 import { Activity, Loader2, Monitor, Radio, Unplug, Volume2, VolumeX } from "lucide-react"
 import { CleanupMenu } from "@/components/cleanup-menu"
+import { LimitsBadge } from "@/components/limits"
 import { ThemeMenu } from "@/components/theme-menu"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { ago } from "@/lib/format"
+import type { Limits } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
 const plural = (n: number, word: string) => `${n} ${word}${n > 1 ? "s" : ""}`
@@ -22,6 +24,7 @@ export function StatusBar({
   ready,
   sounds,
   onSounds,
+  limits,
 }: {
   online: boolean
   hosts: number
@@ -36,6 +39,7 @@ export function StatusBar({
   ready: boolean
   sounds: boolean
   onSounds: (v: boolean) => void
+  limits: Limits | null
 }) {
   return (
     <footer
@@ -81,6 +85,7 @@ export function StatusBar({
       </span>
 
       <span className="ml-auto flex items-center gap-1">
+        <LimitsBadge limits={limits} now={now} />
         {endedCount > 0 && (
           <label className="flex cursor-pointer items-center gap-1.5 rounded px-1.5 py-1 hover:bg-accent hover:text-accent-foreground">
             <Switch checked={showEnded} onCheckedChange={onShowEnded} size="sm" />

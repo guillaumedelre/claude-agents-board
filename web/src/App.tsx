@@ -149,6 +149,7 @@ export default function App() {
         ready={!!board}
         sounds={sounds.enabled}
         onSounds={sounds.setEnabled}
+        limits={board?.limits ?? null}
       />
     </div>
   )

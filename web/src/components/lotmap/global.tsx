@@ -1,11 +1,11 @@
 import { useState } from "react"
 import { go, useLive, useNow } from "@/hooks/use-board"
-import { basename, sessionLabel } from "@/lib/format"
+import { basename, contextWindow, sessionLabel } from "@/lib/format"
 import { sessionDisplay } from "@/lib/status"
 import type { SessionDetail, SessionSummary } from "@/lib/types"
 import { SessionCard, StationCard } from "./card"
 import { reducedMotion, useDark, useLocalTimes } from "./hooks"
-import { type MapBoard, type StationId, type TreeSession, buildBoard, describeNow, drawTree, paletteOf } from "./map"
+import { type MapBoard, type StationId, type TreeSession, buildBoard, describeNow, drawTree, paletteOf, sessionActivity } from "./map"
 
 
 type Tip = { kind: "station"; id: StationId; x: number; y: number } | { kind: "hub"; id: string; x: number; y: number }
@@ -37,7 +37,23 @@ function mergeBoards(details: SessionDetail[], now: number): { board: MapBoard; 
   for (const d of ordered) {
     const display = sessionDisplay(d, now)
     const b = buildBoard(d, null)
-    tree.push({ id: d.id, number: d.number, label: sessionLabel(d), project: basename(d.cwd), host: d.host, status: display === "running" || display === "attention" ? display : "idle", agents: b.agents })
+    const status = display === "running" || display === "attention" ? display : "idle"
+    tree.push({
+      id: d.id,
+      number: d.number,
+      label: sessionLabel(d),
+      project: basename(d.cwd),
+      host: d.host,
+      status,
+      activity: sessionActivity(b, status, d.turns.at(-1)?.start ?? null, d.lastSeen),
+      lastSeen: d.lastSeen,
+      context: b.context,
+      compactions: d.compactions ?? 0,
+      cost: d.usage?.cost ?? null,
+      crew: Object.values(d.agents)
+        .filter((a) => a.status === "running")
+        .map((a) => (a.context ? Math.min(1, a.context.tokens / contextWindow(a.context.model, a.context.tokens)) : null)),
+    })
     const id = (x: string) => `${d.id}/${x}`
     const where = `${d.host} · ${sessionLabel(d)} · `
     board.entries.push(...b.entries.map((e) => ({ ...e, id: id(e.id), label: where + e.label, hub: d.id })))

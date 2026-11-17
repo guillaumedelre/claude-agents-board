@@ -40,6 +40,7 @@ export type Agent = {
   lastTool: LastTool | null
   result?: string | null
   tokens: number | null
+  context?: ContextUsage
   durationMs: number | null
   events?: BoardEvent[]
   eventCount?: number
@@ -65,11 +66,17 @@ type SessionBase = {
   endedAt: number | null
   // Tokens et coût reçus par la télémétrie OpenTelemetry, absents sans elle
   usage?: SessionUsage
+  context?: ContextUsage
+  contextWindow?: number // taille exacte reçue de la status line
+  compactions?: number
 }
 
 export type Usage = { input: number; output: number; cacheRead: number; cacheCreation: number; cost: number; requests: number }
 
-export type SessionUsage = Usage & { models: Record<string, Usage>; last?: { at: number; model: string; context: number } }
+export type SessionUsage = Usage & { models: Record<string, Usage> }
+
+// Tokens envoyés au modèle à la dernière requête du fil (OpenTelemetry)
+export type ContextUsage = { at: number; model: string; tokens: number }
 
 export type SessionSummary = SessionBase & {
   agents: Agent[]
@@ -105,4 +112,8 @@ export type SessionDetail = SessionBase & {
 
 export type Settings = { autoCleanupMs: number }
 
-export type Board = { version: number; now: number; settings: Settings; sessions: SessionSummary[] }
+// Limites de l'abonnement reçues de la status line (rate_limits), dernières connues
+export type Limit = { pct: number; resetsAt: number | null }
+export type Limits = { fiveHour: Limit | null; sevenDay: Limit | null; at: number; host: string }
+
+export type Board = { version: number; now: number; settings: Settings; limits: Limits | null; sessions: SessionSummary[] }
