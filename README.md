@@ -143,6 +143,18 @@ Seuls les journaux (événements) sont exportés, pas les métriques. Claude Cod
 
 </details>
 
+### Sessions lancées par un orchestrateur
+
+Un outil qui lance lui-même des sessions Claude Code, comme [Hive](https://github.com/guillaumedelre/hive) (privé) pour ses agents, les branche sans script d'installation : il passe les mêmes hooks et variables de télémétrie à chaque session avec `claude --settings '<json>'`, et ajoute deux en-têtes aux appels de `POST /api/hooks`.
+
+| En-tête | Effet |
+|---------|-------|
+| `X-Agent-Host` | La machine, comme pour les autres sessions : Hive envoie `hive`, une zone à part de celles des machines physiques |
+| `X-Agent-Label` | Le nom initial de la session (renommable), en UTF-8, 120 caractères au plus. Hive envoie `étape · projet/pipeline` |
+| `X-Agent-Link` | Un lien `http(s)` vers la page de la session dans l'orchestrateur, affiché « Voir le run » dans l'en-tête du détail ; tout autre schéma est ignoré |
+
+Le dossier de projet reste le `cwd` de la session : Hive lance ses agents dans `/hive/<projet>/<pipeline>`, ce qui regroupe les étapes d'un même pipeline.
+
 ## Ce qui est affiché
 
 ### Accueil

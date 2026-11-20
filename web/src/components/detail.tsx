@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
-import { ArrowLeft, Bot, Check, Pencil, X, CheckCircle2, Copy, FolderGit2, Monitor, ScrollText } from "lucide-react"
+import { ArrowLeft, Bot, Check, Pencil, X, CheckCircle2, Copy, ExternalLink, FolderGit2, Monitor, ScrollText } from "lucide-react"
 import { Gantt } from "@/components/gantt"
 import { LotMap } from "@/components/lotmap"
 import { Office } from "@/components/office"
@@ -130,6 +130,12 @@ export function Detail({ session: s, agentId, now }: { session: SessionDetail; a
                 <Monitor className="size-3.5" />
                 {s.host}
               </span>
+              {s.link && (
+                <a href={s.link} target="_blank" rel="noopener" className="flex items-center gap-1 text-primary hover:underline" title="Run de cette session dans l'orchestrateur">
+                  <ExternalLink className="size-3.5" />
+                  Voir le run
+                </a>
+              )}
               {shortModel(s.model) && <span className="font-mono">{shortModel(s.model)}</span>}
               {s.permissionMode && (
                 <Badge variant="outline" className="text-[10px]">

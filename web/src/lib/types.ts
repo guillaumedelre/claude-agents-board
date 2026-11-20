@@ -50,6 +50,8 @@ type SessionBase = {
   id: string
   number: number
   name: string | null
+  /** Page of the run in the orchestrator that started the session (Hive), if any */
+  link?: string | null
   subject: string | null
   lastTool?: LastTool | null
   host: string

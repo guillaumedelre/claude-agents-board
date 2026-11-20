@@ -268,13 +268,14 @@ function nextNumber(host, cwd) {
   return state.counters[key];
 }
 
-function getSession(e, host, now) {
+// Une session lancée par un orchestrateur (Hive) envoie son nom et le lien vers son run dans les en-têtes des hooks.
+function getSession(e, host, now, meta = {}) {
   let s = state.sessions[e.session_id];
   if (!s) {
     s = state.sessions[e.session_id] = {
       id: e.session_id,
       number: nextNumber(host, projectRoot(e.cwd)),
-      name: null,
+      name: meta.label || null,
       agentSeq: 0,
       host,
       cwd: projectRoot(e.cwd),
@@ -294,6 +295,8 @@ function getSession(e, host, now) {
       pending: [],
     };
   }
+  // Sessions enregistrées avant l'ajout du lien
+  s.link ??= meta.link || null;
   // Sessions enregistrées avant l'ajout de la timeline
   s.turns ??= [];
   s.tasks ??= {};
@@ -477,12 +480,12 @@ function linkSpawn(s, toolUseId, resp, now) {
 
 const SOURCES = { startup: 'démarrée', resume: 'reprise', clear: 'vidée (/clear)', compact: 'compactée', fork: 'dupliquée' };
 
-function handle(e, host) {
+function handle(e, host, meta = {}) {
   if (!e || typeof e !== 'object' || typeof e.session_id !== 'string' || typeof e.hook_event_name !== 'string') {
     return false;
   }
   const now = Date.now();
-  const s = getSession(e, host, now);
+  const s = getSession(e, host, now, meta);
   // Agents internes de Claude Code (résumés de progression) : seulement un SubagentStop, sans type ni activité
   if (e.hook_event_name === 'SubagentStop' && e.agent_id && !s.agents[e.agent_id] && !e.agent_type) return true;
   const sub = e.agent_id ? getAgent(s, e.agent_id, e.agent_type, now) : null;
@@ -752,6 +755,14 @@ const liveOf = (s, cutoff) => ({
 
 // --- HTTP ---
 
+// Nom et lien d'une session lancée par un orchestrateur : texte court, lien http(s) seulement.
+function metaOf(req) {
+  // Node lit les en-têtes en latin-1 : le nom, envoyé en UTF-8, est relu comme tel.
+  const label = Buffer.from(String(req.headers['x-agent-label'] || ''), 'latin1').toString('utf8').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 120);
+  const link = String(req.headers['x-agent-link'] || '').trim();
+  return { label: label || null, link: /^https?:\/\/\S{1,500}$/.test(link) ? link : null };
+}
+
 function hostOf(req) {
   const h = req.headers['x-agent-host'];
   if (typeof h === 'string' && h.trim()) return h.trim().slice(0, 64);
@@ -787,7 +798,7 @@ async function api(req, res, pathname) {
     if (req.method !== 'POST') return json(res, 405, { error: 'method not allowed' });
     if (HOOK_TOKEN && req.headers['x-hook-token'] !== HOOK_TOKEN) return json(res, 401, { error: 'bad token' });
     const body = JSON.parse(await readBody(req));
-    if (!handle(body, hostOf(req))) return json(res, 400, { error: 'not a hook payload' });
+    if (!handle(body, hostOf(req), metaOf(req))) return json(res, 400, { error: 'not a hook payload' });
     res.writeHead(204, SECURITY_HEADERS);
     return res.end();
   }
