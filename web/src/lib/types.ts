@@ -114,8 +114,25 @@ export type SessionDetail = SessionBase & {
 
 export type Settings = { autoCleanupMs: number }
 
-// Limites de l'abonnement reçues de la status line (rate_limits), dernières connues
+// Limites de l'abonnement : service usage du homelab si son relevé est frais, sinon dernières rate_limits de la status line
 export type Limit = { pct: number; resetsAt: number | null }
-export type Limits = { fiveHour: Limit | null; sevenDay: Limit | null; at: number; host: string }
+export type Limits = {
+  fiveHour: Limit | null
+  sevenDay: Limit | null
+  // Fournies par le service usage seulement, null tant que le compte ne les a pas
+  sevenDayOpus?: Limit | null
+  sevenDaySonnet?: Limit | null
+  at: number
+  host: string
+  source?: "usage" | "statusline"
+}
 
-export type Board = { version: number; now: number; settings: Settings; limits: Limits | null; sessions: SessionSummary[] }
+// costByHour : coût estimé par heure (clé : début de l'heure en ms) sur les 26 dernières heures
+export type Board = {
+  version: number
+  now: number
+  settings: Settings
+  limits: Limits | null
+  costByHour?: Record<string, number>
+  sessions: SessionSummary[]
+}

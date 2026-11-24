@@ -11,8 +11,10 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
@@ -29,7 +31,18 @@ const CHOICES = [
   { ms: 7 * 86400e3, label: "Après 7 jours d'inactivité", short: "auto 7 j" },
 ]
 
-export function CleanupMenu({ closedCount, autoCleanupMs }: { closedCount: number; autoCleanupMs: number }) {
+// Sessions fermées : affichage dans la barre latérale, retrait immédiat et nettoyage automatique
+export function CleanupMenu({
+  closedCount,
+  autoCleanupMs,
+  showEnded,
+  onShowEnded,
+}: {
+  closedCount: number
+  autoCleanupMs: number
+  showEnded: boolean
+  onShowEnded: (v: boolean) => void
+}) {
   const [confirm, setConfirm] = useState(false)
 
   const setAuto = (value: string) =>
@@ -45,12 +58,21 @@ export function CleanupMenu({ closedCount, autoCleanupMs }: { closedCount: numbe
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="xs" className="text-xs font-normal text-inherit" title="Nettoyage des sessions">
+          <Button
+            variant="ghost"
+            size="xs"
+            className="text-xs font-normal text-inherit tabular-nums"
+            title={`Sessions fermées : ${closedCount}${showEnded ? ", affichées" : ""}`}
+          >
             <Eraser />
-            <span className="hidden sm:inline">{CHOICES.find((c) => c.ms === autoCleanupMs)?.short ?? "auto"}</span>
+            {closedCount > 0 && <span className={cn(showEnded && "text-foreground")}>{closedCount}</span>}
+            <span className="hidden opacity-70 lg:inline">{CHOICES.find((c) => c.ms === autoCleanupMs)?.short ?? "auto"}</span>
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" side="top" className="w-72">
+          <DropdownMenuCheckboxItem checked={showEnded} onCheckedChange={onShowEnded} onSelect={(e) => e.preventDefault()}>
+            Afficher les sessions fermées ({closedCount})
+          </DropdownMenuCheckboxItem>
           <DropdownMenuItem disabled={closedCount === 0} onSelect={() => setConfirm(true)}>
             <Eraser />
             Retirer les sessions fermées ({closedCount})

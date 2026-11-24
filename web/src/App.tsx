@@ -150,6 +150,7 @@ export default function App() {
         sounds={sounds.enabled}
         onSounds={sounds.setEnabled}
         limits={board?.limits ?? null}
+        costByHour={board?.costByHour}
       />
     </div>
   )

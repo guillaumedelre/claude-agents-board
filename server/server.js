@@ -11,6 +11,9 @@ const STATE_FILE = path.join(DATA_DIR, 'state.json');
 const WEB_DIR = path.join(__dirname, '..', 'public');
 const HOOK_TOKEN = process.env.HOOK_TOKEN || '';
 const RETENTION_MS = (Number(process.env.RETENTION_DAYS) || 7) * 86400e3;
+// Service usage du homelab (limites de l'abonnement sans session ouverte) ; vide = status line seule
+const USAGE_URL = (process.env.USAGE_URL || '').replace(/\/+$/, '');
+const USAGE_POLL_MS = 60e3;
 // Un PostToolUse de Read ou de Bash peut porter plusieurs Mo de sortie
 const MAX_BODY = 20 * 1024 * 1024;
 const MAX_EVENTS = 500;
@@ -223,6 +226,52 @@ function handleStatusLine(body, host, now) {
     }
   }
   return { dirty, sessionId: s ? s.id : null };
+}
+
+// --- Service usage : prioritaire tant que son dernier relevé est frais, la status line reste le repli ---
+let usageLimits = null;
+const usageLimitOf = (w) =>
+  w && Number.isFinite(Number(w.utilization)) ? { pct: Number(w.utilization) * 100, resetsAt: Date.parse(w.resets_at) || null } : null;
+
+// Coût estimé par heure sur les 26 dernières heures : le navigateur en tire le total de sa journée locale
+function recentCost(now) {
+  const since = now - 26 * HOUR_MS;
+  const hours = {};
+  for (const [at, b] of Object.entries(state.activity)) {
+    if (Number(at) < since || !b.models) continue;
+    const cost = Object.values(b.models).reduce((sum, u) => sum + u.cost, 0);
+    if (cost > 0) hours[at] = cost;
+  }
+  return hours;
+}
+
+// Limites affichées : { fiveHour, sevenDay, at, host, source }
+function limitsOf() {
+  if (usageLimits) return usageLimits;
+  return state.limits ? { ...state.limits, source: 'statusline' } : null;
+}
+
+async function pollUsage() {
+  let next = null;
+  try {
+    const res = await fetch(`${USAGE_URL}/api/usage`, { signal: AbortSignal.timeout(5000) });
+    if (res.ok) {
+      const body = await res.json();
+      const at = Date.parse(body?.read_at);
+      const fiveHour = usageLimitOf(body?.five_hour);
+      const sevenDay = usageLimitOf(body?.seven_day);
+      const sevenDayOpus = usageLimitOf(body?.seven_day_opus);
+      const sevenDaySonnet = usageLimitOf(body?.seven_day_sonnet);
+      if (body?.fresh === true && at && (fiveHour || sevenDay))
+        next = { fiveHour, sevenDay, sevenDayOpus, sevenDaySonnet, at, host: 'usage', source: 'usage' };
+    }
+  } catch {
+    // Injoignable : repli sur la status line
+  }
+  if (!sameJson(next, usageLimits)) {
+    usageLimits = next;
+    changed(null);
+  }
 }
 
 function handleOtelLogs(body) {
@@ -843,7 +892,7 @@ async function api(req, res, pathname) {
       const sessions = Object.values(state.sessions)
         .sort((a, b) => b.lastSeen - a.lastSeen)
         .map(summaryOf);
-      return json(res, 200, { version, now: Date.now(), settings: state.settings, limits: state.limits ?? null, sessions });
+      return json(res, 200, { version, now: Date.now(), settings: state.settings, limits: limitsOf(), costByHour: recentCost(Date.now()), sessions });
     }
     if (parts.length === 2 && req.method === 'DELETE') {
       const now = Date.now();
@@ -1002,6 +1051,10 @@ for (const signal of ['SIGTERM', 'SIGINT']) {
     }
   }
   setInterval(autoCleanup, 60e3).unref();
+  if (USAGE_URL) {
+    setInterval(pollUsage, USAGE_POLL_MS).unref();
+    pollUsage();
+  }
   autoCleanup();
   server.listen(PORT, () => console.log(`agents listening on :${PORT}`));
 })();

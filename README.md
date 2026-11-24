@@ -2,7 +2,7 @@
 
 ![Claude Code hooks][badge-claude] ![Node.js 22][badge-node] ![React 19][badge-react] ![Vite 8][badge-vite] ![Tailwind CSS 4][badge-tailwind] ![TypeScript 6][badge-ts] ![shadcn/ui][badge-shadcn] ![Docker Compose][badge-docker] ![Traefik][badge-traefik] ![Serveur sans dépendance][badge-deps]
 
-Tableau de bord web, en temps réel, des sessions [Claude Code][claude-code] et de leurs sous-agents, sur toutes les machines du réseau local. Chaque session envoie ses [hooks][hooks] et sa télémétrie [OpenTelemetry][otel-docs] à l'application, auto-hébergée derrière [Traefik][traefik], qui affiche ce que font les agents : prompts, appels d'outils, sous-agents, tâches, demandes de permission, tokens et coût.
+Tableau de bord web, en temps réel, des sessions [Claude Code][claude-code] et de leurs sous-agents, sur toutes les machines du réseau local. Chaque session envoie ses [hooks][hooks] et sa télémétrie [OpenTelemetry][otel-docs] à l'application, auto-hébergée derrière [Traefik][traefik], qui affiche ce que font les agents : prompts, appels d'outils, sous-agents, tâches, demandes de permission, tokens et coût, ainsi que la consommation de l'abonnement.
 
 ![Arbre de l'accueil : toi, les sessions ouvertes de chaque machine et les stations qu'elles utilisent](docs/screenshots/home-tree.png)
 
@@ -51,6 +51,7 @@ L'application est servie sur `http://agents.${IP}.${DOMAIN}` (HTTP seulement, la
 |----------|--------|------|
 | `HOOK_TOKEN` | vide | Si défini, `POST /api/hooks` exige l'en-tête `X-Hook-Token` |
 | `RETENTION_DAYS` | `7` | Les sessions sans activité depuis ce nombre de jours sont supprimées |
+| `USAGE_URL` | vide | Adresse d'un service qui relève les limites de l'abonnement (`GET {USAGE_URL}/api/usage`, interrogé chaque minute). Vide : limites tirées de la status line seule. Non transmise par `compose.yaml` : à définir dans `environment` d'un `compose.override.yaml` (voir [Limites de l'abonnement](#limites-de-labonnement)) |
 
 L'image est construite localement : Watchtower ne la met pas à jour. Pour reprendre aussi l'image de base Node :
 
@@ -289,9 +290,23 @@ Les hooks ne transmettent pas la consommation : elle vient de la télémétrie [
 
 Ni les hooks ni la télémétrie ne donnent la consommation de l'abonnement. La [status line][statusline] la reçoit : `rate_limits.seven_day` (semaine) et `rate_limits.five_hour` (fenêtre de 5 h), en pourcentage utilisé avec la date de reset, pour les abonnés Pro et Max, après la première réponse du modèle. Le script `agents-statusline.sh` installé par `install-hooks.sh` envoie cette entrée à `POST /api/statusline`.
 
-- **Affichage** : jauge « Semaine » dans la barre d'état, avec la fenêtre de 5 h à côté ; le survol donne les deux pourcentages, les dates de reset, la machine qui les a envoyés et quand.
+Si `USAGE_URL` est défini, le serveur interroge en plus chaque minute `GET {USAGE_URL}/api/usage`, un service qui relève lui-même la consommation de l'abonnement (réponse `{ read_at, fresh, five_hour: { utilization, resets_at }, seven_day: {...} }`, `utilization` en fraction). La barre d'état est alors remplie même sans session ouverte ni navigateur.
+
+- **Priorité** : un relevé du service avec `fresh: true` l'emporte ; service injoignable, en erreur ou relevé périmé (`fresh: false`), les dernières limites reçues de la status line reprennent la main. La status line reste donc le repli et n'a pas à être désinstallée.
+- **Exemple** (homelab) : `compose.override.yaml` non suivi par git, le conteneur étant sur le réseau `traefik` comme le service :
+
+  ```yaml
+  services:
+      agents:
+          environment:
+              USAGE_URL: http://usage-usage-1:3000
+  ```
+
+- **Affichage** : deux jauges au centre de la barre d'état, « Semaine » (icône jauge) et « 5 h » (icône calendrier), avec leur heure de reset sur grand écran, chacune orange à partir de 60 % et rouge à partir de 85 %.
+- **Repère de rythme** : un trait vertical dans chaque jauge marque la part de la fenêtre déjà écoulée (calculée à partir de la date de reset). Un remplissage qui le dépasse signifie une consommation plus rapide que le temps.
+- **Pastille de source** : verte pour un relevé frais du service usage, grise pour la status line, orange quand le relevé de la status line a plus de 20 minutes. Le survol donne le détail de chaque fenêtre (pourcentage, reset, part écoulée), les semaines Opus et Sonnet quand le service les fournit (`seven_day_opus`, `seven_day_sonnet`), la source et l'âge du relevé.
 - **Fenêtre expirée** : passée sa date de reset, une fenêtre est affichée à 0 % en attendant la prochaine valeur.
-- **Données gardées** : les deux limites (dernières reçues, communes au compte), la taille de la fenêtre et le contexte de la session. Le reste de l'entrée (dossier, transcript, coût...) est ignoré.
+- **Données gardées** : les deux limites (dernières reçues, communes au compte), la taille de la fenêtre et le contexte de la session. Le reste de l'entrée (dossier, transcript, coût...) est ignoré. Le relevé du service usage reste en mémoire (relu dès le démarrage du serveur).
 - **Windows** : `install-hooks.ps1` n'enveloppe pas encore la status line, il faut la brancher à la main (voir ci-dessous).
 
 #### Brancher sa status line à la main
@@ -350,10 +365,12 @@ La barre du haut garde le bouton qui replie la barre latérale, le titre (retour
 
 | Barre de statut | Contenu |
 |-----------------|---------|
-| À gauche | État du flux temps réel (« En direct », ou « Hors ligne » sur fond rouge), machines actives, sessions ouvertes, agents en cours, ancienneté du dernier événement reçu (grand écran) |
-| À droite | Interrupteur « Fermées (N) », menu « Nettoyage » (« manuel » ou « auto 1 h / 24 h / 7 j »), bouton « Sons », thème (clair, sombre ou automatique) |
+| Connexion (à gauche) | État du flux temps réel (« En direct », ou « Hors ligne » sur fond rouge) suivi de l'âge du dernier événement reçu d'un hook (grand écran) |
+| Activité | Machines actives, sessions ouvertes, agents en cours, coût estimé depuis minuit (heure locale du navigateur, toutes machines, tarif public de l'API) ; sur petit écran, seulement les agents en cours |
+| Abonnement (centre) | Jauges « Semaine » et « 5 h » avec un repère de rythme et une pastille de source (voir [Limites de l'abonnement](#limites-de-labonnement)) |
+| Réglages (à droite) | Menu des sessions fermées (nombre, afficher ou non, retirer, nettoyage automatique « manuel » ou « auto 1 h / 24 h / 7 j »), bouton « Sons », thème (clair, sombre ou automatique) |
 
-- **Préférences retenues par navigateur** : thème, sons, barre latérale repliée, machines et dossiers repliés, interrupteur « Fermées », onglet de l'accueil, vue du détail, plage de la Timeline, mode des étiquettes.
+- **Préférences retenues par navigateur** : thème, sons, barre latérale repliée, machines et dossiers repliés, affichage des sessions fermées, onglet de l'accueil, vue du détail, plage de la Timeline, mode des étiquettes.
 - **Sons** (désactivés par défaut) : un court carillon, généré par le navigateur, quand une session termine son tour, et un autre quand une session demande une permission. Après un rechargement, le navigateur n'autorise le son qu'après un premier clic ou une touche.
 - **Sessions fermées** : une session est fermée quand elle a envoyé `SessionEnd`, ou quand elle est « en cours » sans événement depuis 10 minutes. Masquée par défaut, elle s'affiche avec une carte en pointillés, un titre barré, depuis quand elle est fermée et, si le nettoyage automatique est actif, le temps avant son retrait.
 - **Nettoyage** : « Retirer les sessions fermées » (après confirmation), ou le nettoyage automatique (24 h par défaut, ou 1 h, 7 jours, désactivé) qui retire chaque minute toute session sans événement depuis ce délai. Une session retirée revient au prochain événement qu'elle envoie. Le nettoyage n'efface pas l'historique des durées qui sert aux estimations.
@@ -369,6 +386,8 @@ flowchart LR
   CC1 -- "hooks command (curl)<br/>POST /api/hooks" --> S
   CC2 -- "POST /api/hooks" --> S
   CC1 -. "télémétrie OTLP/HTTP JSON<br/>POST /v1/logs" .-> S
+  CC1 -. "status line (repli)<br/>POST /api/statusline" .-> S
+  S -- "GET /api/usage<br/>chaque minute" --> U[service usage<br/>USAGE_URL, optionnel]
   S[server/server.js<br/>Node, sans dépendance] <--> V[(volume agents_data<br/>/data/state.json)]
   S -- "SSE /api/stream<br/>change + live" --> W[Interface web<br/>React + Vite]
   W -- "GET /api/..." --> S
@@ -378,6 +397,7 @@ flowchart LR
 - `web/` : interface React avec [Vite][vite], [Tailwind CSS][tailwind] v4 et [shadcn/ui][shadcn], compilée dans l'image Docker.
 - `server/server.js` : serveur Node sans dépendance. Il reçoit les hooks, tient l'état en mémoire, sert l'interface et pousse les changements en [SSE][sse].
 - **Tokens et coût** : la télémétrie OpenTelemetry de chaque session arrive sur `POST /v1/logs` ; le serveur n'en garde que les événements `api_request`.
+- **Limites de l'abonnement** : si `USAGE_URL` est défini, le serveur interroge le service usage chaque minute et garde le dernier relevé frais en mémoire ; sinon, ou en repli, il retient les `rate_limits` reçues par `POST /api/statusline`.
 - **Temps réel** : chaque hook, et chaque lot de télémétrie, déclenche un signal `change` sur le flux. Les navigateurs abonnés avec `?live=all` (arbre de l'accueil) ou `?live=<id>` (carte d'une session) reçoivent en plus la session modifiée, allégée, sans avoir à la recharger.
 
 <details>
@@ -387,14 +407,14 @@ flowchart LR
 |-------------------|------|
 | `GET /api/health` | Santé du serveur (healthcheck Docker) |
 | `POST /api/hooks` | Reçoit le JSON d'un hook Claude Code tel quel (en-têtes optionnels `X-Agent-Host`, `X-Hook-Token`) |
-| `GET /api/sessions` | Résumé de toutes les sessions (sans les chronologies) |
+| `GET /api/sessions` | Résumé de toutes les sessions (sans les chronologies), avec les limites affichées (`limits`, dont `source`) et le coût estimé par heure des 26 dernières heures (`costByHour`) |
 | `GET /api/sessions/:id` | Session complète : chronologie de chaque agent, tours de conversation, tâches, estimations de durée |
 | `PATCH /api/sessions/:id` | `{ "name": "..." }` renomme une session (80 caractères au maximum ; vide pour revenir au nom automatique) |
 | `DELETE /api/sessions` | Retire les sessions fermées et celles sans nouvelles depuis 10 minutes |
 | `GET /api/settings`, `PUT /api/settings` | `{ "autoCleanupMs": 86400000 }` : délai du nettoyage automatique (`0`, 1 h, 24 h ou 7 jours) |
 | `GET /api/galaxy` | Sessions ouvertes, allégées pour l'arbre de l'accueil : 60 derniers événements et 60 derniers tours par fil, sans les sorties d'outils, entrées tronquées à 400 caractères et textes à 120, sous-agents en cours ou terminés depuis moins de 10 minutes, sans tâches ni estimations |
 | `GET /api/activity` | Par heure, sur 8 jours : appels d'outils, prompts (heatmap) et, par modèle, tokens et coût estimé |
-| `POST /api/statusline` | Reçoit l'entrée JSON de la status line (limites de l'abonnement, fenêtre de contexte). Mêmes en-têtes que `/api/hooks` |
+| `POST /api/statusline` | Reçoit l'entrée JSON de la status line (limites de l'abonnement, en repli du service `USAGE_URL` ; fenêtre de contexte). Mêmes en-têtes que `/api/hooks` |
 | `POST /v1/logs` | Reçoit la télémétrie OpenTelemetry de Claude Code (OTLP/HTTP en JSON, gzip accepté ; protobuf refusé avec 415). Exige `X-Hook-Token` si `HOOK_TOKEN` est défini |
 | `GET /api/stream` | Flux SSE qui signale chaque changement. `?live=all` pousse aussi, à chaque hook, la session modifiée sous la forme allégée de `/api/galaxy` ; `?live=<id>`, seulement cette session |
 
