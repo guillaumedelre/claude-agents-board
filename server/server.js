@@ -16,6 +16,8 @@ const USAGE_URL = (process.env.USAGE_URL || '').replace(/\/+$/, '');
 const USAGE_POLL_MS = 60e3;
 // Journal brut des lots OTLP reçus sur /v1/logs (un fichier JSON par lot) ; vide = désactivé
 const OTLP_RAW_DIR = process.env.OTLP_RAW_DIR || '';
+// Journal brut des hooks reçus sur /api/hooks (un fichier JSON par requête) ; vide = désactivé
+const HOOKS_RAW_DIR = process.env.HOOKS_RAW_DIR || '';
 // Un PostToolUse de Read ou de Bash peut porter plusieurs Mo de sortie
 const MAX_BODY = 20 * 1024 * 1024;
 const MAX_EVENTS = 500;
@@ -806,6 +808,18 @@ const liveOf = (s, cutoff) => ({
 
 // --- HTTP ---
 
+// Corps tel que reçu, précédé des en-têtes qui identifient l'émetteur ; un échec d'écriture ne bloque pas le traitement
+function saveHookRaw(req, raw) {
+  const pick = ['x-agent-host', 'x-agent-label', 'x-agent-link', 'x-forwarded-for', 'user-agent'];
+  const headers = Object.fromEntries(pick.filter((k) => req.headers[k] !== undefined).map((k) => [k, Buffer.from(String(req.headers[k]), 'latin1').toString('utf8')]));
+  const now = Date.now();
+  const meta = JSON.stringify({ receivedAt: new Date(now).toISOString(), remoteAddress: req.socket.remoteAddress, headers });
+  const file = path.join(HOOKS_RAW_DIR, `${now}-${crypto.randomBytes(4).toString('hex')}.json`);
+  fs.mkdir(HOOKS_RAW_DIR, { recursive: true })
+    .then(() => fs.writeFile(file, `${meta.slice(0, -1)},"body":${raw}}\n`))
+    .catch((e) => console.error(`hooks raw: ${e.message}`));
+}
+
 // Nom et lien d'une session lancée par un orchestrateur : texte court, lien http(s) seulement.
 function metaOf(req) {
   // Node lit les en-têtes en latin-1 : le nom, envoyé en UTF-8, est relu comme tel.
@@ -848,7 +862,9 @@ async function api(req, res, pathname) {
   if (parts[1] === 'hooks' && parts.length === 2) {
     if (req.method !== 'POST') return json(res, 405, { error: 'method not allowed' });
     if (HOOK_TOKEN && req.headers['x-hook-token'] !== HOOK_TOKEN) return json(res, 401, { error: 'bad token' });
-    const body = JSON.parse(await readBody(req));
+    const raw = await readBody(req);
+    if (HOOKS_RAW_DIR) saveHookRaw(req, raw);
+    const body = JSON.parse(raw);
     if (!handle(body, hostOf(req), metaOf(req))) return json(res, 400, { error: 'not a hook payload' });
     res.writeHead(204, SECURITY_HEADERS);
     return res.end();
