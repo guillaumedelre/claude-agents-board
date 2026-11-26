@@ -52,6 +52,7 @@ L'application est servie sur `http://agents.${IP}.${DOMAIN}` (HTTP seulement, la
 | `HOOK_TOKEN` | vide | Si défini, `POST /api/hooks` exige l'en-tête `X-Hook-Token` |
 | `RETENTION_DAYS` | `7` | Les sessions sans activité depuis ce nombre de jours sont supprimées |
 | `USAGE_URL` | vide | Adresse d'un service qui relève les limites de l'abonnement (`GET {USAGE_URL}/api/usage`, interrogé chaque minute). Vide : limites tirées de la status line seule. Non transmise par `compose.yaml` : à définir dans `environment` d'un `compose.override.yaml` (voir [Limites de l'abonnement](#limites-de-labonnement)) |
+| `OTLP_RAW_DIR` | vide | Si défini, chaque lot reçu sur `POST /v1/logs` est aussi écrit tel quel (corps décompressé) dans ce dossier du conteneur, un fichier `<timestamp ms>-<hex>.json` par lot, pour inspecter les attributs envoyés par Claude Code. Le traitement n'est pas modifié. Aucune rotation : à n'activer que le temps d'un diagnostic. Le texte des prompts n'y figure que si `OTEL_LOG_USER_PROMPTS=1` côté Claude Code. Non transmise par `compose.yaml` : à définir dans un `compose.override.yaml` avec un montage du dossier |
 
 L'image est construite localement : Watchtower ne la met pas à jour. Pour reprendre aussi l'image de base Node :
 

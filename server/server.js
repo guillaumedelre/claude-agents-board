@@ -14,6 +14,8 @@ const RETENTION_MS = (Number(process.env.RETENTION_DAYS) || 7) * 86400e3;
 // Service usage du homelab (limites de l'abonnement sans session ouverte) ; vide = status line seule
 const USAGE_URL = (process.env.USAGE_URL || '').replace(/\/+$/, '');
 const USAGE_POLL_MS = 60e3;
+// Journal brut des lots OTLP reçus sur /v1/logs (un fichier JSON par lot) ; vide = désactivé
+const OTLP_RAW_DIR = process.env.OTLP_RAW_DIR || '';
 // Un PostToolUse de Read ou de Bash peut porter plusieurs Mo de sortie
 const MAX_BODY = 20 * 1024 * 1024;
 const MAX_EVENTS = 500;
@@ -947,6 +949,14 @@ async function serveStatic(res, pathname) {
   res.end(await fs.readFile(file));
 }
 
+// Copie du corps décompressé tel que reçu ; un échec d'écriture ne bloque pas le traitement
+function saveOtlpRaw(raw) {
+  const file = path.join(OTLP_RAW_DIR, `${Date.now()}-${crypto.randomBytes(4).toString('hex')}.json`);
+  fs.mkdir(OTLP_RAW_DIR, { recursive: true })
+    .then(() => fs.writeFile(file, raw))
+    .catch((e) => console.error(`otlp raw: ${e.message}`));
+}
+
 // Point d'arrivée OTLP des journaux : JSON seulement (OTEL_EXPORTER_OTLP_LOGS_PROTOCOL=http/json)
 async function otelLogs(req, res) {
   if (req.method !== 'POST') return json(res, 405, { error: 'method not allowed' });
@@ -954,6 +964,7 @@ async function otelLogs(req, res) {
   if (!String(req.headers['content-type'] || '').includes('json')) return json(res, 415, { error: 'use http/json' });
   let raw = await readBody(req, true);
   if (req.headers['content-encoding'] === 'gzip') raw = zlib.gunzipSync(raw, { maxOutputLength: MAX_BODY });
+  if (OTLP_RAW_DIR) saveOtlpRaw(raw);
   handleOtelLogs(JSON.parse(raw.toString('utf8')));
   return json(res, 200, {});
 }
